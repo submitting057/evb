@@ -1,0 +1,12 @@
+# 大体积数据产物：缓存与概率矩阵可由脚本重建，不入库
+runs/cache/
+runs/**/*.npz
+runs/smoke_merge/
+runs/save_weights.log
+runs/df_grid*.log
+runs/ens*.log
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
