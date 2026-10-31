@@ -1,0 +1,99 @@
+config: {"dataset": "10s", "rep": "segs", "bin_size_ms": 10, "split": {"seed": 42, "known_video_frac": 0.8, "train_frac": 0.6, "val_frac": 0.2, "test_frac": 0.2, "unknown_val_frac": 0.5, "gallery_k": 3}, "train": {"epochs": 120, "batch_p": 32, "batch_k": 4, "batch_p_events": 16, "lr": 0.001, "weight_decay": 0.0001, "warmup_epochs": 3, "margin_warmup_epochs": 10, "dropout": 0.1, "embed_dim": 128, "arcface_s": 32.0, "arcface_m": 0.5, "num_workers": 4, "eval_every": 1, "patience": 25, "min_epochs": 60}, "tcn": {"width": 128, "stem_channels": 64, "dilations": [1, 2, 4, 8, 16, 32]}, "et": {"d_model": 128, "nhead": 4, "ff_dim": 512, "layers": 6, "channel_emb": 8}}
+packing train 9257 sessions (rep=segs, augment=True) ...
+packed in 9s
+packing eval 10142 sessions ...
+packed in 9s
+model params: 0.20M
+epoch 1/120 loss=11.4499 tracc=0.000 (1s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006  *best*
+epoch 2/120 loss=11.0721 tracc=0.000 (0s) | val top1=0.0055 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0006  *best*
+epoch 3/120 loss=12.0798 tracc=0.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0006  *best*
+epoch 4/120 loss=13.5392 tracc=0.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 5/120 loss=14.9602 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 6/120 loss=16.3772 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 7/120 loss=17.7765 tracc=0.000 (0s) | val top1=0.0055 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 8/120 loss=19.1897 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 9/120 loss=20.4846 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 10/120 loss=21.7730 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 11/120 loss=21.7100 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 12/120 loss=21.6429 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 13/120 loss=21.5557 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 14/120 loss=21.4534 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 15/120 loss=21.3846 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 16/120 loss=21.2680 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 17/120 loss=21.1334 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 18/120 loss=20.9772 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 19/120 loss=20.8109 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 20/120 loss=20.5448 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 21/120 loss=20.2524 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 22/120 loss=19.8942 tracc=0.000 (0s) | val top1=0.0037 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 23/120 loss=19.4536 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 24/120 loss=18.9114 tracc=0.000 (0s) | val top1=0.0037 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 25/120 loss=18.3649 tracc=0.000 (0s) | val top1=0.0037 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 26/120 loss=17.7371 tracc=0.000 (0s) | val top1=0.0037 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 27/120 loss=17.1111 tracc=0.000 (0s) | val top1=0.0043 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 28/120 loss=16.4552 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 29/120 loss=15.7956 tracc=0.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 30/120 loss=15.1325 tracc=0.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 31/120 loss=14.4485 tracc=0.000 (0s) | val top1=0.0055 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 32/120 loss=13.7633 tracc=0.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 33/120 loss=13.0695 tracc=0.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 34/120 loss=12.3694 tracc=0.000 (0s) | val top1=0.0074 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000  *best*
+epoch 35/120 loss=11.6688 tracc=0.000 (0s) | val top1=0.0080 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000  *best*
+epoch 36/120 loss=10.9632 tracc=0.000 (0s) | val top1=0.0074 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 37/120 loss=10.2585 tracc=0.000 (0s) | val top1=0.0068 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 38/120 loss=9.5576 tracc=0.000 (0s) | val top1=0.0068 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 39/120 loss=8.8650 tracc=0.000 (0s) | val top1=0.0068 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 40/120 loss=8.1840 tracc=0.000 (0s) | val top1=0.0080 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 41/120 loss=7.5264 tracc=0.000 (0s) | val top1=0.0080 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 42/120 loss=6.8919 tracc=0.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000  *best*
+epoch 43/120 loss=6.2828 tracc=0.001 (0s) | val top1=0.0080 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 44/120 loss=5.7078 tracc=0.501 (0s) | val top1=0.0080 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 45/120 loss=5.1750 tracc=0.966 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 46/120 loss=4.6815 tracc=1.000 (0s) | val top1=0.0086 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 47/120 loss=4.2270 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 48/120 loss=3.8310 tracc=1.000 (0s) | val top1=0.0098 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000  *best*
+epoch 49/120 loss=3.4946 tracc=1.000 (0s) | val top1=0.0104 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006  *best*
+epoch 50/120 loss=3.2464 tracc=1.000 (0s) | val top1=0.0068 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 51/120 loss=3.1190 tracc=1.000 (0s) | val top1=0.0104 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 52/120 loss=3.0584 tracc=1.000 (0s) | val top1=0.0111 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000  *best*
+epoch 53/120 loss=2.9978 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 54/120 loss=2.9563 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 55/120 loss=2.9122 tracc=1.000 (0s) | val top1=0.0123 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000  *best*
+epoch 56/120 loss=2.8677 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 57/120 loss=2.8400 tracc=1.000 (0s) | val top1=0.0080 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 58/120 loss=2.8127 tracc=1.000 (0s) | val top1=0.0098 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 59/120 loss=2.7933 tracc=1.000 (0s) | val top1=0.0098 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 60/120 loss=2.7709 tracc=1.000 (0s) | val top1=0.0104 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 61/120 loss=2.7595 tracc=1.000 (0s) | val top1=0.0104 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 62/120 loss=2.7433 tracc=1.000 (0s) | val top1=0.0074 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 63/120 loss=2.7260 tracc=1.000 (0s) | val top1=0.0117 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 64/120 loss=2.7175 tracc=1.000 (0s) | val top1=0.0111 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0012
+epoch 65/120 loss=2.7088 tracc=1.000 (0s) | val top1=0.0068 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0012
+epoch 66/120 loss=2.6958 tracc=1.000 (0s) | val top1=0.0129 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0018  *best*
+epoch 67/120 loss=2.6845 tracc=1.000 (0s) | val top1=0.0111 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 68/120 loss=2.6714 tracc=1.000 (0s) | val top1=0.0111 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 69/120 loss=2.6618 tracc=1.000 (0s) | val top1=0.0104 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 70/120 loss=2.6529 tracc=1.000 (0s) | val top1=0.0111 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 71/120 loss=2.6524 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0006 TPR@1%=0.0006 TPR@5%=0.0012
+epoch 72/120 loss=2.6424 tracc=1.000 (0s) | val top1=0.0111 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0025
+epoch 73/120 loss=2.6380 tracc=1.000 (0s) | val top1=0.0074 TPR@0.5%=0.0006 TPR@1%=0.0006 TPR@5%=0.0031
+epoch 74/120 loss=2.6263 tracc=1.000 (0s) | val top1=0.0086 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 75/120 loss=2.6105 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0006 TPR@1%=0.0006 TPR@5%=0.0012
+epoch 76/120 loss=2.6052 tracc=1.000 (0s) | val top1=0.0098 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0006
+epoch 77/120 loss=2.6034 tracc=1.000 (0s) | val top1=0.0074 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 78/120 loss=2.5963 tracc=1.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 79/120 loss=2.5801 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0006
+epoch 80/120 loss=2.5807 tracc=1.000 (0s) | val top1=0.0086 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0018
+epoch 81/120 loss=2.5695 tracc=1.000 (0s) | val top1=0.0092 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0018
+epoch 82/120 loss=2.5674 tracc=1.000 (0s) | val top1=0.0086 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 83/120 loss=2.5633 tracc=1.000 (0s) | val top1=0.0098 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 84/120 loss=2.5484 tracc=1.000 (0s) | val top1=0.0074 TPR@0.5%=0.0006 TPR@1%=0.0006 TPR@5%=0.0025
+epoch 85/120 loss=2.5471 tracc=1.000 (0s) | val top1=0.0043 TPR@0.5%=0.0006 TPR@1%=0.0006 TPR@5%=0.0012
+epoch 86/120 loss=2.5393 tracc=1.000 (0s) | val top1=0.0086 TPR@0.5%=0.0012 TPR@1%=0.0012 TPR@5%=0.0025
+epoch 87/120 loss=2.5371 tracc=1.000 (0s) | val top1=0.0061 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 88/120 loss=2.5260 tracc=1.000 (0s) | val top1=0.0049 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0012
+epoch 89/120 loss=2.5262 tracc=1.000 (0s) | val top1=0.0086 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0000
+epoch 90/120 loss=2.5163 tracc=1.000 (0s) | val top1=0.0061 TPR@0.5%=0.0006 TPR@1%=0.0006 TPR@5%=0.0006
+epoch 91/120 loss=2.5146 tracc=1.000 (0s) | val top1=0.0074 TPR@0.5%=0.0018 TPR@1%=0.0018 TPR@5%=0.0018
+early stop at epoch 91 (best=66)
+done. best epoch=66 ckpt=E:\evb\df\runs\10s_segs_s42\best.pt

@@ -1,0 +1,20 @@
+config: {"dataset": "10s", "rep": "bins", "bin_size_ms": 10, "split": {"seed": 42, "known_video_frac": 0.8, "train_frac": 0.6, "val_frac": 0.2, "test_frac": 0.2, "unknown_val_frac": 0.5, "gallery_k": 3}, "train": {"epochs": 40, "batch_p": 32, "batch_k": 4, "batch_p_events": 16, "lr": 0.0003, "weight_decay": 0.0001, "warmup_epochs": 2, "dropout": 0.1, "embed_dim": 128, "arcface_s": 32.0, "arcface_m": 0.5, "num_workers": 4, "eval_every": 1, "patience": 8}, "tcn": {"width": 128, "stem_channels": 64, "dilations": [1, 2, 4, 8, 16, 32]}, "et": {"d_model": 128, "nhead": 4, "ff_dim": 512, "layers": 6, "channel_emb": 8}}
+packing train 9257 sessions (rep=bins) ...
+packed in 29s
+packing eval 10142 sessions ...
+packed in 25s
+model params: 0.66M
+epoch 1/40 loss=24.4870 (4s) | val top1=0.0319 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0031  *best*
+epoch 2/40 loss=23.6381 (2s) | val top1=0.0264 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0025
+epoch 3/40 loss=22.9215 (2s) | val top1=0.0276 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0031
+epoch 4/40 loss=22.4793 (2s) | val top1=0.0264 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0037  *best*
+epoch 5/40 loss=22.2439 (3s) | val top1=0.0264 TPR@0.5%=0.0006 TPR@1%=0.0012 TPR@5%=0.0043  *best*
+epoch 6/40 loss=22.0551 (3s) | val top1=0.0258 TPR@0.5%=0.0000 TPR@1%=0.0006 TPR@5%=0.0031
+epoch 7/40 loss=21.9842 (3s) | val top1=0.0264 TPR@0.5%=0.0006 TPR@1%=0.0018 TPR@5%=0.0043  *best*
+epoch 8/40 loss=21.9122 (3s) | val top1=0.0252 TPR@0.5%=0.0006 TPR@1%=0.0018 TPR@5%=0.0049
+epoch 9/40 loss=21.8304 (3s) | val top1=0.0252 TPR@0.5%=0.0006 TPR@1%=0.0018 TPR@5%=0.0043
+epoch 10/40 loss=21.8263 (3s) | val top1=0.0252 TPR@0.5%=0.0000 TPR@1%=0.0000 TPR@5%=0.0055
+epoch 11/40 loss=21.8651 (3s) | val top1=0.0240 TPR@0.5%=0.0000 TPR@1%=0.0025 TPR@5%=0.0037  *best*
+epoch 12/40 loss=21.7479 (3s) | val top1=0.0252 TPR@0.5%=0.0006 TPR@1%=0.0018 TPR@5%=0.0043
+epoch 13/40 loss=21.7171 (3s) | val top1=0.0252 TPR@0.5%=0.0012 TPR@1%=0.0025 TPR@5%=0.0037  *best*
+epoch 14/40 loss=21.7204 (3s) | val top1=0.0215 TPR@0.5%=0.0012 TPR@1%=0.0012 TPR@5%=0.0037

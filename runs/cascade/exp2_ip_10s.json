@@ -1,0 +1,103 @@
+{
+ "dataset": "10s",
+ "coverage": {
+  "n_sessions": 19399,
+  "sessions_with_ips": 19399,
+  "distinct_ips": 318,
+  "distinct_24": 12,
+  "distinct_16": 10
+ },
+ "pairs": {
+  "same_video": [
+   0.6,
+   0.5996065476190476,
+   0.9994
+  ],
+  "diff_video": [
+   0.5,
+   0.548969604863222,
+   0.9987984981226533
+  ],
+  "same_day": [
+   0.6,
+   0.6311017282493792,
+   0.999225606608157
+  ],
+  "cross_day": [
+   0.5,
+   0.5920403607306746,
+   0.9994418950762743
+  ]
+ },
+ "prune": {
+  "/24": {
+   "recall": 1.0,
+   "recall_givem_ip": 1.0,
+   "mean_cand": 514.9898283534648,
+   "median_cand": 515.0,
+   "pct_empty_then_all": 0.0,
+   "pct_probe_no_ip": 0.0,
+   "n_known_with_profile": 515
+  },
+  "/16": {
+   "recall": 0.9993642720915448,
+   "recall_givem_ip": 0.9993642720915448,
+   "mean_cand": 513.956770502225,
+   "median_cand": 515.0,
+   "pct_empty_then_all": 0.0,
+   "pct_probe_no_ip": 0.0,
+   "n_known_with_profile": 515
+  },
+  "full": {
+   "recall": 0.9987285441830897,
+   "recall_givem_ip": 0.9987285441830897,
+   "mean_cand": 511.3941513032422,
+   "median_cand": 515.0,
+   "pct_empty_then_all": 0.0,
+   "pct_probe_no_ip": 0.0,
+   "n_known_with_profile": 515
+  }
+ },
+ "combined": {
+  "/24_ip\u2229topK_K16": {
+   "recall": 0.8976478067387158,
+   "mean_cand": 16.0
+  },
+  "/24_ip\u222atopK_K16": {
+   "recall": 1.0,
+   "mean_cand": 514.9898283534648
+  },
+  "/24_ip\u2229topK_K32": {
+   "recall": 0.9256198347107438,
+   "mean_cand": 32.0
+  },
+  "/24_ip\u222atopK_K32": {
+   "recall": 1.0,
+   "mean_cand": 514.9898283534648
+  },
+  "/24_ip\u2229topK_K64": {
+   "recall": 0.9574062301335029,
+   "mean_cand": 64.0
+  },
+  "/24_ip\u222atopK_K64": {
+   "recall": 1.0,
+   "mean_cand": 514.9898283534648
+  },
+  "/24_ip\u2229topK_K128": {
+   "recall": 0.9739351557533376,
+   "mean_cand": 127.99745708836618
+  },
+  "/24_ip\u222atopK_K128": {
+   "recall": 1.0,
+   "mean_cand": 514.9923712650985
+  },
+  "/24_ip\u2229topK_K256": {
+   "recall": 0.9904640813731723,
+   "mean_cand": 255.99491417673235
+  },
+  "/24_ip\u222atopK_K256": {
+   "recall": 1.0,
+   "mean_cand": 514.9949141767323
+  }
+ }
+}

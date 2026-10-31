@@ -1,0 +1,204 @@
+{
+ "config": {
+  "dataset": "10s",
+  "rep": "bins",
+  "bin_size_ms": 10,
+  "split": {
+   "seed": 42,
+   "known_video_frac": 0.8,
+   "train_frac": 0.6,
+   "val_frac": 0.2,
+   "test_frac": 0.2,
+   "unknown_val_frac": 0.5,
+   "gallery_k": 3
+  },
+  "train": {
+   "epochs": 40,
+   "batch_p": 32,
+   "batch_k": 4,
+   "lr": 0.0003,
+   "weight_decay": 0.0001,
+   "warmup_epochs": 2,
+   "dropout": 0.1,
+   "embed_dim": 128,
+   "arcface_s": 32.0,
+   "arcface_m": 0.5,
+   "num_workers": 4,
+   "eval_every": 1,
+   "patience": 8
+  },
+  "tcn": {
+   "width": 128,
+   "stem_channels": 64,
+   "dilations": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32
+   ]
+  },
+  "et": {
+   "d_model": 128,
+   "nhead": 4,
+   "ff_dim": 512,
+   "layers": 6,
+   "channel_emb": 8
+  }
+ },
+ "best_iteration": 1,
+ "n_features": 156,
+ "feature_importance_top20": [
+  [
+   "batch1_end_ms",
+   2238
+  ],
+  [
+   "batch2_end_ms",
+   816
+  ],
+  [
+   "batch_gap_ms",
+   487
+  ],
+  [
+   "ch_api_burst_bytes_max",
+   388
+  ],
+  [
+   "ch_thumbnail_burst_bytes_max",
+   261
+  ],
+  [
+   "ch_api_burst_len_mean",
+   236
+  ],
+  [
+   "ch_api_burst_bytes_mean",
+   213
+  ],
+  [
+   "ch_api_down_binbytes_max",
+   206
+  ],
+  [
+   "ch_video_cdn_down_bytes",
+   202
+  ],
+  [
+   "ch_api_down_binbytes_p25",
+   178
+  ],
+  [
+   "ch_api_down_pkts",
+   135
+  ],
+  [
+   "ch_channel_info_burst_bytes_max",
+   111
+  ],
+  [
+   "ch_api_down_binbytes_p50",
+   109
+  ],
+  [
+   "ch_video_cdn_up_bytes",
+   104
+  ],
+  [
+   "ch_channel_info_down_bytes",
+   102
+  ],
+  [
+   "ch_api_down_binbytes_mean",
+   99
+  ],
+  [
+   "ch_video_cdn_burst_bytes_max",
+   96
+  ],
+  [
+   "ch_api_down_binbytes_p90",
+   91
+  ],
+  [
+   "ch_other_burst_bytes_max",
+   86
+  ],
+  [
+   "ch_api_down_binbytes_p10",
+   85
+  ]
+ ],
+ "val": {
+  "n_probes": 3171,
+  "n_impostors": 1901,
+  "closed": {
+   "top1": 0.18889940081993062,
+   "top5": 0.2358877325764743
+  },
+  "fpr": {
+   "0.005": {
+    "tpr": 0.0,
+    "threshold": 1.000000000001,
+    "tpr_ci95": [
+     0.0,
+     0.0
+    ]
+   },
+   "0.01": {
+    "tpr": 0.0,
+    "threshold": 1.000000000001,
+    "tpr_ci95": [
+     0.0,
+     0.0
+    ]
+   },
+   "0.05": {
+    "tpr": 0.0,
+    "threshold": 1.000000000001,
+    "tpr_ci95": [
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "auroc_detection": 0.5365932153088442
+ },
+ "test": {
+  "n_probes": 1573,
+  "n_impostors": 1955,
+  "closed": {
+   "top1": 0.17673235855054037,
+   "top5": 0.23076923076923078
+  },
+  "fpr": {
+   "0.005": {
+    "tpr": 0.0,
+    "threshold": 1.000000000001,
+    "tpr_ci95": [
+     0.0,
+     0.0
+    ]
+   },
+   "0.01": {
+    "tpr": 0.0,
+    "threshold": 1.000000000001,
+    "tpr_ci95": [
+     0.0,
+     0.0
+    ]
+   },
+   "0.05": {
+    "tpr": 0.0,
+    "threshold": 1.000000000001,
+    "tpr_ci95": [
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "auroc_detection": 0.5237246826644641
+ }
+}
