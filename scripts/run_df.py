@@ -60,6 +60,7 @@ def predict(model, loader, device, seg_std, use_side):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default="10s")
+    ap.add_argument("--protocol", default="legacy", choices=["legacy", "strict"])
     ap.add_argument("--channels", default="video_cdn,api,channel_info,thumbnail,other")
     ap.add_argument("--fusion", default="stack", choices=["merge", "stack", "branch"])
     ap.add_argument("--value", default="logsize", choices=["logsize", "dir"])
@@ -81,7 +82,7 @@ def main():
     np.random.seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    rcfg = RunConfig(dataset=args.dataset)
+    rcfg = RunConfig(dataset=args.dataset, protocol=args.protocol)
     rcfg.split.seed = args.seed
     index = SessionIndex(rcfg.dataset_dir, rcfg.bin_size_ms)
     splits = load_splits(rcfg.splits_path)

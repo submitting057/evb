@@ -134,6 +134,7 @@ def simplex(step, k):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default="10s")
+    ap.add_argument("--protocol", default="legacy", choices=["legacy", "strict"])
     ap.add_argument("--df-tags", required=True)
     ap.add_argument("--step", type=float, default=0.05)
     ap.add_argument("--out", default=None,
@@ -144,7 +145,11 @@ def main():
     tags = [t for t in args.df_tags.split(",") if t]
     cos_tags = [t for t in args.cos_tags.split(",") if t]
 
-    z = np.load(PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}.npz")
+    if args.protocol == "strict":
+        lgbm_cache = PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}_strict.npz"
+    else:
+        lgbm_cache = PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}.npz"
+    z = np.load(lgbm_cache)
     names = ["lgbm"] + tags
     y = {}
     raw = {}                                     # (name, split) -> (probe, imp)

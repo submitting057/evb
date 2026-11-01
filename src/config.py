@@ -72,6 +72,7 @@ class EventTransformerConfig:
 @dataclass
 class RunConfig:
     dataset: str = "10s"                 # '10s' | '5s'
+    protocol: str = "legacy"             # 'legacy' | 'strict' (video-disjoint impostors)
     rep: str = "bins"                    # 'bins' | 'events'
     bin_size_ms: int = 10
     split: SplitConfig = field(default_factory=SplitConfig)
@@ -93,7 +94,10 @@ class RunConfig:
 
     @property
     def splits_path(self) -> Path:
-        return PROJECT_ROOT / "splits" / f"splits_{self.dataset}_s{self.split.seed}.json"
+        name = f"splits_{self.dataset}_strict_s{self.split.seed}.json" \
+            if self.protocol == "strict" else \
+            f"splits_{self.dataset}_s{self.split.seed}.json"
+        return PROJECT_ROOT / "splits" / name
 
     def to_dict(self) -> dict:
         return asdict(self)

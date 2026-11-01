@@ -81,12 +81,13 @@ def predict(model, ds, device, batch=256):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default="10s")
+    ap.add_argument("--protocol", default="legacy", choices=["legacy", "strict"])
     ap.add_argument("--tags", required=True, help="comma list of DF run tags")
     args = ap.parse_args()
     tags = [t for t in args.tags.split(",") if t]
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    rcfg = RunConfig(dataset=args.dataset)
+    rcfg = RunConfig(dataset=args.dataset, protocol=args.protocol)
     index = SessionIndex(rcfg.dataset_dir, rcfg.bin_size_ms)
     splits = load_splits(rcfg.splits_path)
     known = sorted(splits["known_videos"])

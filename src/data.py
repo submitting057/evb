@@ -123,6 +123,55 @@ def make_splits(index: SessionIndex, cfg: SplitConfig, out_path: Path) -> dict:
     return splits
 
 
+def make_splits_strict(index: SessionIndex, cfg: SplitConfig, out_path: Path) -> dict:
+    """Strict open-set protocol: video-disjoint impostor pools (6:2:2).
+
+    644 videos -> 386 known / 129 unknown->val impostors / 129 unknown->test
+    impostors.  Unknown videos go WHOLE into their pool (no session split), so
+    the calibration (val) and evaluation (test) impostor populations share no
+    identity -- the deployment assumption the legacy protocol violates."""
+    rng = random.Random(cfg.seed)
+    videos = list(index.videos)
+    rng.shuffle(videos)
+    n_known = round(len(videos) * 0.6)
+    n_val = round(len(videos) * 0.2)
+    known_videos = sorted(videos[:n_known])
+    val_unknown = sorted(videos[n_known:n_known + n_val])
+    test_unknown = sorted(videos[n_known + n_val:])
+    known_set, val_set = set(known_videos), set(val_unknown)
+
+    splits = {"dataset_dir": str(index.dir), "seed": cfg.seed, "protocol": "strict",
+              "known_videos": known_videos,
+              "unknown_videos": sorted(val_unknown + test_unknown),
+              "unknown_val_videos": val_unknown,
+              "unknown_test_videos": test_unknown,
+              "sessions": {}}
+    for vid, sess_idx in index.by_video.items():
+        sids = [index.sessions[i]["session_id"] for i in sess_idx]
+        rng.shuffle(sids)
+        if vid in known_set:
+            mins = (2, 1, 1) if len(sids) >= 4 else (1, 1, 1)
+            c_tr, c_va, c_te = _alloc_counts(len(sids), (cfg.train_frac, cfg.val_frac, cfg.test_frac), mins)
+            parts = [sids[:c_tr], sids[c_tr:c_tr + c_va], sids[c_tr + c_va:]]
+            for part_name, part in zip(["train", "val", "test"], parts):
+                gallery = []
+                if part_name in ("val", "test"):
+                    gallery = sorted(rng.sample(part, min(cfg.gallery_k, len(part))))
+                for sid in part:
+                    splits["sessions"][sid] = {"video": vid, "role": "known",
+                                               "split": part_name,
+                                               "gallery": sid in gallery}
+        else:
+            part_name = "val" if vid in val_set else "test"
+            for sid in sids:
+                splits["sessions"][sid] = {"video": vid, "role": "unknown",
+                                           "split": part_name, "gallery": False}
+    splits["gallery_k"] = cfg.gallery_k
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(splits, indent=1), encoding="utf-8")
+    return splits
+
+
 def load_splits(path: Path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 

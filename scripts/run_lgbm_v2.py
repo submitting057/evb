@@ -36,8 +36,8 @@ def get_X(index, sids, cache_key):
     return X
 
 
-def main(dataset="10s", seed=42):
-    rcfg = RunConfig(dataset=dataset)
+def main(dataset="10s", protocol="legacy", seed=42):
+    rcfg = RunConfig(dataset=dataset, protocol=protocol)
     rcfg.split.seed = seed
     index = SessionIndex(rcfg.dataset_dir, rcfg.bin_size_ms)
     splits = load_splits(rcfg.splits_path)
@@ -75,6 +75,7 @@ def main(dataset="10s", seed=42):
 
     report = {"config": rcfg.to_dict(), "best_iteration": model.best_iteration,
               "n_features": int(X.shape[1]), "splits": {}}
+    probs_cache = {}                        # strict protocol: feed run_combiner
 
     for split in ("val", "test"):
         gal = pools[f"{split}_gal"]
@@ -87,6 +88,8 @@ def main(dataset="10s", seed=42):
         from src.evaluate import open_set_with_custom_score
         prob = model.predict(A(probes), num_iteration=model.best_iteration)
         prob_i = model.predict(A(imps), num_iteration=model.best_iteration)
+        probs_cache[f"{split}_probe"] = prob
+        probs_cache[f"{split}_imp"] = prob_i
 
         # 1) max probability
         results["prob"] = open_set_metrics(prob, y, prob_i.max(1), n_boot=1000)
@@ -131,12 +134,24 @@ def main(dataset="10s", seed=42):
             print(format_open_set_report(f"{split.upper()} [{mode}]", m))
         report["splits"][split] = results
 
-    out_dir = PROJECT_ROOT / "runs" / f"{dataset}_lgbmv2_s{seed}"
+    out_dir = PROJECT_ROOT / "runs" / (f"{dataset}_lgbmv2_strict"
+                                       if protocol == "strict"
+                                       else f"{dataset}_lgbmv2_s{seed}")
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "report.json").write_text(json.dumps(report, indent=1, default=str),
                                          encoding="utf-8")
-    print(f"[wrote] {out_dir / 'report.json'}")
+    if protocol == "strict":
+        np.savez(PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{dataset}_strict.npz",
+                 best_iter=model.best_iteration, **probs_cache)
+        print(f"[wrote] {out_dir / 'report.json'} + probs cache (strict)")
+    else:
+        print(f"[wrote] {out_dir / 'report.json'}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "10s")
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dataset", default="10s")
+    ap.add_argument("--protocol", default="legacy", choices=["legacy", "strict"])
+    a = ap.parse_args()
+    main(a.dataset, a.protocol)
