@@ -33,25 +33,30 @@ DF+dt 三路），纯后处理组合器：
 ## 严格协议（视频不交叠开集，`splits_10s_strict_s42.json`）推荐配置
 
 部署假设"未知视频完全未见过"（644 → 386 known / 129 val 冒充 / 129 test 冒充，
-视频级 6:2:2）下的推荐系统 = **geo 几何平均加权**，成员为 386 类严格重训版
-（LGBM + DF branch e100 + DF branch dt，w≈.3/.3/.4，`runs/combo_10s_strict*`）：
+视频级 6:2:2）下的推荐系统 = **geo 几何平均 4 成员**（LGBM + DF branch e100 +
+DF branch dt + **DF branch aux**——aux 只看辅助通道，是针对 video_cdn 共线
+磁铁的独立反对票），权重 **.35/.10/.20/.35**（池化 LOVO 选出，aux 与 lgbm
+并列最大），`runs/combo_10s_strict_t2a1/` + `runs/t2_aux_eval/`：
 
 | 严格协议 test（10s） | top1 | @0.5% | @1% | @5% | AUROC |
 |---|---|---|---|---|---|
-| **geo 加权（推荐）** | .973 | **.551–.561** | .625 | .819 | **.946** |
+| **geo4 加权（推荐，T2-A1）** | .975 | **.654** | **.729** | **.880** | **.964** |
+| geo3 加权（T2-A1 前基线，.30/.35/.35） | .973 | .551–.561 | .625 | .819 | .946 |
 | arith 等权（保守替代） | .954 | .577 | .651 | .753 | .929 |
 | gcfisher_a（旧协议最优，此协议下崩塌） | .973 | .218 | .384 | .722 | .920 |
 
-注（T0 测量地基，`runs/strict_diag/`）：视频簇 bootstrap 下 geo @0.5% CI
-[.432,.697]；配对 dTPR(geo−arith) @0.5%/@1% **含 0（两规则统计不可分）**，
-仅 @5% [+.040,+.088] geo 显著占优——推荐 geo 的依据是 @5% 与 AUROC，0.5% 档
-两规则打平。test top-19 冒充者事件仅来自 4 只视频（剔掉最大磁铁 +10pp），
-0.5% 档对未知视频组成高度敏感；部署口径（val 定阈）realized FPR：geo 1.30%、
-arith 0.67%。
+验收（升级判据 = 配对视频簇 bootstrap，dTPR(geo4−geo3)）：@0.5%
+**[+.050,+.151]**、@1% **[+.043,+.143]**、@5% **[+.039,+.083]**，三档全部
+排 0——**严格协议下 0.5% 档首个统计可判的正提升**。机制：val 磁铁事件上 aux
+中位置置信 .500（其余成员 .77–.98），geo 乘积在"辅助通道不认账"的会话上自动
+塌陷；两个旧 DF 在冒充者上 argmax 互认 52%（同质化），aux 仅 7.4%/7.6%。
+部署口径（val 定阈）realized FPR@0.5%：geo4 **1.12%**（geo3 1.30%），TPR
+.738（.656）。成员单独很弱（aux top1 .654）但乘积组合不看单独强弱。
 
-上表 gcfisher_a 的类维 ECDF 定价被证明绑定标定池视频身份；P1 收缩修复
-（κ 谱 + 池化 LOVO，`run_combiner.py --lovo`）单调有效但封顶于总体定价
-（LOVO .656 < geo .696），负结果关闭——实验链见 findings.md §3.5 第六/七轮。
+历史注记（T0，`runs/strict_diag/`）：geo3 vs arith 在 0.5%/1% 档统计不可分
+（仅 @5% geo 显著）；test top-19 冒充者仅来自 4 只视频。上表 gcfisher_a 的
+类维 ECDF 定价被证明绑定标定池视频身份；P1 收缩修复封顶于总体定价
+（LOVO .656 < geo3 .696），负结果关闭——实验链见 findings.md §3.5 第六/七轮。
 **此后开集配置选择一律用池化 LOVO**（留未知视频 5 折，其排名与 test 同向）。
 
 ## 单模型最优配置（DF branch）
@@ -109,8 +114,17 @@ python scripts/run_df.py --dataset 5s --fusion branch \
 python scripts/run_combiner.py --dataset 5s --df-tags df5_branch_all_e100
 # 纯推理评估（不训练，读 runs/<tag>/model.pt）
 python scripts/run_df.py --dataset 10s --fusion branch \
-    --channels video_cdn,api,channel_info,thumbnail,other --dt \
+    --channels video_cdn,api,channel_info,thumbnail,other --epochs 100 --dt \
     --tag df_branch_all_dt --load
+# 6) 严格协议 4 成员（推荐）：aux 专家成员 + 池化 LOVO 权重重搜
+python scripts/run_df.py --dataset 10s --protocol strict --fusion branch \
+    --channels api,channel_info,thumbnail,other --epochs 100 \
+    --tag dfs_branch_aux
+python scripts/run_combiner.py --dataset 10s --protocol strict \
+    --df-tags dfs_branch_all_e100,dfs_branch_all_dt,dfs_branch_aux \
+    --lovo --families plain --out combo_10s_strict_t2a1
+# 7) 验收（独立门 + 磁铁否决力 + 配对簇 bootstrap vs 3 成员基线）
+python scripts/run_t2_aux_eval.py --w4 0.35,0.10,0.20,0.35
 ```
 
 ## 环境

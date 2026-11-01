@@ -20,3 +20,4 @@ runs/combo_regcheck/
 runs/strict*.log
 runs/dfs_dt_oe_pilot/
 runs/oe*.log
+runs/df_aux_train.log

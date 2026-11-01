@@ -159,6 +159,10 @@ def main():
     ap.add_argument("--lovo", action="store_true",
                     help="P1: leave-unknown-video-out selection + per-class "
                          "pricing shrinkage (strict protocol)")
+    ap.add_argument("--families", default="all", choices=["all", "plain"],
+                    help="'plain': only arith/geo/min (memory-safe for many "
+                         "members -- the cfisher/A2 weight-grid cache grows "
+                         "linearly with the weight count and OOMs at 4+ members)")
     ap.add_argument("--folds", type=int, default=5)
     args = ap.parse_args()
     tags = [t for t in args.df_tags.split(",") if t]
@@ -442,43 +446,47 @@ def main():
 
     # B1 p-space rules (no temperature: the ECDF is the calibration).
     # argmax/top1 come from the geo ensemble over PROB members -> cache them.
+    plain_only = args.families == "plain"
     correct_cache = {}
-    for wname, w in p_wlist:
-        Pv = combine("geo", pw(list(w)), [raw[(n, "val")][0] for n in names])
-        correct_cache[wname] = Pv.argmax(1) == y["val"]
-    sp, si = combine_pscore("ptippett", pw(list(w0full)), "val")
-    variants.append({"rule": "ptippett", "temp": False, "w": list(w0full),
-                     "wname": "equal",
-                     "val": quick_score(correct_cache["equal"], sp, si)})
-    for rule in ("pfisher", "pstouffer", "pmean"):
+    if not plain_only:
         for wname, w in p_wlist:
-            sp, si = combine_pscore(rule, pw(list(w)), "val")
-            variants.append({"rule": rule, "temp": False, "w": list(w), "wname": wname,
-                             "val": quick_score(correct_cache[wname], sp, si)})
-    for rule in ("cfisher", "cpmean"):
-        for wname, w in p_wlist:
-            Tp, Ti = cmat_w(rule, wname, w)
-            if rule == "cfisher":  # hybrid twin: geo argmax + cfisher score
-                variants.append({"rule": "gcfisher", "temp": False, "w": list(w),
+            Pv = combine("geo", pw(list(w)), [raw[(n, "val")][0] for n in names])
+            correct_cache[wname] = Pv.argmax(1) == y["val"]
+        sp, si = combine_pscore("ptippett", pw(list(w0full)), "val")
+        variants.append({"rule": "ptippett", "temp": False, "w": list(w0full),
+                         "wname": "equal",
+                         "val": quick_score(correct_cache["equal"], sp, si)})
+        for rule in ("pfisher", "pstouffer", "pmean"):
+            for wname, w in p_wlist:
+                sp, si = combine_pscore(rule, pw(list(w)), "val")
+                variants.append({"rule": rule, "temp": False, "w": list(w),
                                  "wname": wname,
-                                 "val": quick_score(correct_cache[wname],
-                                                    Tp.max(1), Ti.max(1))})
-            correct = Tp.argmax(1) == y["val"]
-            variants.append({"rule": rule, "temp": False, "w": list(w), "wname": wname,
-                             "val": quick_score(correct, Tp.max(1), Ti.max(1))})
+                                 "val": quick_score(correct_cache[wname], sp, si)})
+        for rule in ("cfisher", "cpmean"):
+            for wname, w in p_wlist:
+                Tp, Ti = cmat_w(rule, wname, w)
+                if rule == "cfisher":  # hybrid twin: geo argmax + cfisher score
+                    variants.append({"rule": "gcfisher", "temp": False, "w": list(w),
+                                     "wname": wname,
+                                     "val": quick_score(correct_cache[wname],
+                                                        Tp.max(1), Ti.max(1))})
+                correct = Tp.argmax(1) == y["val"]
+                variants.append({"rule": rule, "temp": False, "w": list(w),
+                                 "wname": wname,
+                                 "val": quick_score(correct, Tp.max(1), Ti.max(1))})
 
-    # A2: gcfisher + auxiliary scalar evidence (whole-vector veto)
-    for alpha in (0.15, 0.3, 0.6, 1.0):
-        for wname, w in p_wlist:
-            wn = wnrm(list(w))
-            Tp, Ti = cmat_w("cfisher", wname, w)
-            aux_p = sum(u * SEV[(n, "val")][0] for n, u in zip(members, wn) if u > 0)
-            aux_i = sum(u * SEV[(n, "val")][1] for n, u in zip(members, wn) if u > 0)
-            variants.append({"rule": "gcfisher_a", "temp": False, "alpha": alpha,
-                             "w": list(w), "wname": wname,
-                             "val": quick_score(correct_cache[wname],
-                                                Tp.max(1) + alpha * aux_p,
-                                                Ti.max(1) + alpha * aux_i)})
+        # A2: gcfisher + auxiliary scalar evidence (whole-vector veto)
+        for alpha in (0.15, 0.3, 0.6, 1.0):
+            for wname, w in p_wlist:
+                wn = wnrm(list(w))
+                Tp, Ti = cmat_w("cfisher", wname, w)
+                aux_p = sum(u * SEV[(n, "val")][0] for n, u in zip(members, wn) if u > 0)
+                aux_i = sum(u * SEV[(n, "val")][1] for n, u in zip(members, wn) if u > 0)
+                variants.append({"rule": "gcfisher_a", "temp": False, "alpha": alpha,
+                                 "w": list(w), "wname": wname,
+                                 "val": quick_score(correct_cache[wname],
+                                                    Tp.max(1) + alpha * aux_p,
+                                                    Ti.max(1) + alpha * aux_i)})
 
     # ---- P1: LOVO selection + per-class pricing shrinkage (see module doc) ----
     lovo_report = None
@@ -608,7 +616,7 @@ def main():
 
         # shrunk class-wise pricing (gcfisher family); per-fold probe and
         # held-out-impostor scores are pooled across folds for the criterion
-        for g in range(nf):
+        for g in range(nf) if not plain_only else []:
             CP = {n: fold_class_p(n, g) for n in members}
             SV = {n: fold_sev(n, g) for n in members}
             m_imp = row_fold == g
