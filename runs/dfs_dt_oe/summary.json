@@ -1,0 +1,8 @@
+{
+ "tag": "dfs_branch_all_dt",
+ "lams": [
+  0.01
+ ],
+ "epochs": 8,
+ "frozen_top1": 0.9293924466338259
+}

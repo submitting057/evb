@@ -18,3 +18,5 @@ runs/10s_segs_s42/best.pt
 runs/combo*.log
 runs/combo_regcheck/
 runs/strict*.log
+runs/dfs_dt_oe_pilot/
+runs/oe*.log
