@@ -1,0 +1,256 @@
+{
+  "10s": {
+    "sessions": 19399,
+    "videos": 644,
+    "fields": {
+      "quality_status": {
+        "ok": 14364,
+        "warning": 5035
+      },
+      "device": {
+        "yb1": 19399
+      },
+      "platform": {
+        "Android": 19399
+      },
+      "network": {
+        "Wifi": 19399
+      },
+      "application_version": {
+        "21.26.364": 19399
+      },
+      "resolution": {
+        "auto": 19399
+      },
+      "video_batches": {
+        "2": 19033,
+        "1": 366
+      },
+      "contains_ad": {
+        "False": 19399
+      },
+      "contains_foreign_video": {
+        "False": 19399
+      }
+    },
+    "duration_quantiles": [
+      0.3176398277282715,
+      4.62606406211853,
+      13.667224025726318,
+      14.229854440689087,
+      14.983252048492432
+    ],
+    "days": {
+      "20260923": 394,
+      "20260924": 1450,
+      "20260925": 1638,
+      "20260926": 1641,
+      "20260927": 1640,
+      "20260928": 291,
+      "20260929": 1594,
+      "20260930": 1983,
+      "20261021": 407,
+      "20261022": 2670,
+      "20261023": 2689,
+      "20261024": 2634,
+      "20261025": 368
+    }
+  },
+  "5s": {
+    "sessions": 19392,
+    "videos": 644,
+    "fields": {
+      "quality_status": {
+        "ok": 14364,
+        "warning": 5028
+      },
+      "device": {
+        "yb1": 19392
+      },
+      "platform": {
+        "Android": 19392
+      },
+      "network": {
+        "Wifi": 19392
+      },
+      "application_version": {
+        "21.26.364": 19392
+      },
+      "resolution": {
+        "auto": 19392
+      },
+      "video_batches": {
+        "None": 19392
+      },
+      "contains_ad": {
+        "False": 19392
+      },
+      "contains_foreign_video": {
+        "False": 19392
+      }
+    },
+    "duration_quantiles": [
+      0.3176398277282715,
+      2.069689989089966,
+      2.508418011665345,
+      3.4690974283218385,
+      4.912628173828125
+    ],
+    "days": {
+      "20260923": 387,
+      "20260924": 1447,
+      "20260925": 1637,
+      "20260926": 1637,
+      "20260927": 1635,
+      "20260928": 290,
+      "20260929": 1590,
+      "20260930": 1988,
+      "20261021": 407,
+      "20261022": 2674,
+      "20261023": 2694,
+      "20261024": 2637,
+      "20261025": 369
+    }
+  },
+  "paired": {
+    "common_sids": 19362,
+    "same_pcap_sha256": 19362,
+    "same_capture_id": 19362,
+    "prefix_sample_check": {
+      "sample": "64 paired known train sessions; RNG seed42",
+      "exact_event_and_path_prefix_pairs": 64,
+      "sample_pairs": 64
+    }
+  },
+  "strict_pools": {
+    "unknown/val/probe": 3895,
+    "unknown/test/probe": 3856,
+    "known/train/probe": 6937,
+    "known/val/probe": 1218,
+    "known/val/gallery": 1157,
+    "known/test/gallery": 1157,
+    "known/test/probe": 1179
+  },
+  "input": {
+    "video_cdn": {
+      "cap": 4096,
+      "count_quantiles": [
+        631.0,
+        1302.0,
+        1867.0999999999985,
+        3862.3800000000083,
+        21541.0
+      ],
+      "missing_frac": 0.0,
+      "truncated_frac": 0.008144749729367493,
+      "train_truncated_frac": 0.0067752630820239294,
+      "lost_bytes_frac": 0.005938235298070636
+    },
+    "api": {
+      "cap": 512,
+      "count_quantiles": [
+        279.0,
+        391.0,
+        427.0,
+        510.0,
+        894.0
+      ],
+      "missing_frac": 0.00015464714676014229,
+      "truncated_frac": 0.009278828805608536,
+      "train_truncated_frac": 0.008072653884964682,
+      "lost_bytes_frac": 0.0009384472150495577
+    },
+    "channel_info": {
+      "cap": 128,
+      "count_quantiles": [
+        35.0,
+        46.0,
+        51.0,
+        132.0,
+        763.0
+      ],
+      "missing_frac": 0.037733903809474716,
+      "truncated_frac": 0.011031496468890149,
+      "train_truncated_frac": 0.008937581086925184,
+      "lost_bytes_frac": 0.03654782684506741
+    },
+    "thumbnail": {
+      "cap": 256,
+      "count_quantiles": [
+        99.0,
+        135.0,
+        150.0,
+        185.02000000000044,
+        346.0
+      ],
+      "missing_frac": 0.006649827310686118,
+      "truncated_frac": 0.0002061961956801897,
+      "train_truncated_frac": 0.0,
+      "lost_bytes_frac": 0.00016200021017258383
+    },
+    "other": {
+      "cap": 64,
+      "count_quantiles": [
+        19.0,
+        23.0,
+        25.0,
+        28.0,
+        62.0
+      ],
+      "missing_frac": 0.41600082478478273,
+      "truncated_frac": 0.0,
+      "train_truncated_frac": 0.0,
+      "lost_bytes_frac": 0.0
+    }
+  },
+  "packet": {
+    "fraction_abs_gt1500": 0.36281309316557087,
+    "fraction_abs_gt65535": 0.0,
+    "max_abs": 20000,
+    "cache_sessions": 19399,
+    "events_abs_exactly_20000": 242087,
+    "fraction_abs_exactly_20000": 0.009973359277819154
+  },
+  "integrity": {
+    "unique_raw_pcap_sha256": 19399,
+    "duplicate_hash_groups": 0,
+    "cross_split_hash_groups": 0,
+    "sessions_negative_global_integer_ms": 0,
+    "negative_integer_ms_deltas": 0,
+    "sessions_negative_per_channel_integer_ms": 0,
+    "warning_fraction": 0.2595494613124388,
+    "warning_reason": "Non-monotonic timestamps; one row also reports an SNI-DNS mismatch"
+  },
+  "mass_crosscheck": {
+    "sample": "256 known train sessions, rng seed42",
+    "event_over_bin_byte_ratio_quantiles": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "sessions_event_bin_mismatch_gt1pct": 0,
+    "total_event_bytes": 974542743.0,
+    "total_bin_bytes": 974542743.0,
+    "sample_sessions_with_20000": 246
+  },
+  "code_audit": {
+    "side_features": "scripts/run_df.py computes seg_rows but indexes globally ordered seg_std using pool-local idx; strict train/val_probe/test_probe local/global matching indices: 0/6937, 0/1218, 0/1179; current geo4 has side=none",
+    "aux_dropout": "src/dfnet.py protects position j=0, which is api in aux-only model",
+    "widths": "DFNet flatten dimensions hardcode output channels 256",
+    "cache_identity": "raw/segment/probability caches do not consistently store session IDs, class IDs, source/split fingerprints"
+  },
+  "warning_val_strata": {
+    "ok": {
+      "n": 924,
+      "top1": 0.974025974025974,
+      "tpr005": 0.7683982683982684
+    },
+    "warning": {
+      "n": 294,
+      "top1": 0.9727891156462585,
+      "tpr005": 0.7891156462585034
+    }
+  }
+}
