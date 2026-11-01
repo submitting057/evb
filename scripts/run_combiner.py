@@ -47,6 +47,21 @@ live on the full member list; prob rules use the renormalized prob subset.
 
 Selection: weights/temperature/rule chosen by VAL TPR@0.5%FPR (tie-break @1%).
 Test is only reported, never used for selection.
+
+P1 (--lovo, strict-protocol repair): the class-wise ECDF prices class c against
+the val-impostor distribution FOR THAT class; with ~10 firing impostors per
+class those prices overfit the specific unknown videos in the calibration pool
+(sixth-round collapse).  Two repairs, jointly selected:
+  1) shrinkage  p_shrunk = (k_c * p_emp + kappa * p_pop) / (k_c + kappa),
+     k_c = #complement val impostors whose class-c value exceeds the pooled
+     median (fire depth), p_pop = price against the POOLED distribution of all
+     complement cells (identity-agnostic).  kappa=0 keeps the old per-class
+     pricing; kappa=-1 is pure population pricing.
+  2) LOVO selection: the unknown VAL videos are split into --folds groups;
+     every candidate (rule/weights/kappa/alpha) is calibrated on the other 4/5
+     and judged on the held-out fifth (threshold from the calibration folds,
+     probes scored under calibration-fold pricing).  Selection uses only the
+     LOVO-aggregated TPR; TEST numbers use the ordinary full-val calibration.
 """
 import argparse
 import itertools
@@ -141,6 +156,10 @@ def main():
                     help="output dir name under runs/ (default combo_{dataset})")
     ap.add_argument("--cos-tags", default="",
                     help="comma list of gallery-cosine member dirs (score-only)")
+    ap.add_argument("--lovo", action="store_true",
+                    help="P1: leave-unknown-video-out selection + per-class "
+                         "pricing shrinkage (strict protocol)")
+    ap.add_argument("--folds", type=int, default=5)
     args = ap.parse_args()
     tags = [t for t in args.df_tags.split(",") if t]
     cos_tags = [t for t in args.cos_tags.split(",") if t]
@@ -408,6 +427,7 @@ def main():
         return cmat_cache[key]
 
     variants = []
+    plain_scores = {}            # P1 LOVO reuse: (rule,T,wname) -> (sp, si, correct)
     for use_T in (False, True):
         for rule in ("arith", "geo", "min"):
             cands = [("equal", w0full)] if rule == "min" else p_wlist
@@ -415,6 +435,8 @@ def main():
                 Pw = pw(list(w))
                 Pv = combine(rule, Pw, [scaled(n, "val", use_T)[0] for n in names])
                 Iv = combine(rule, Pw, [scaled(n, "val", use_T)[1] for n in names])
+                plain_scores[(rule, use_T, wname)] = (Pv.max(1), Iv.max(1),
+                                                      Pv.argmax(1) == y["val"])
                 variants.append({"rule": rule, "temp": use_T, "w": list(w),
                                  "wname": wname, "val": quick(Pv, y["val"], Iv)})
 
@@ -457,6 +479,343 @@ def main():
                              "val": quick_score(correct_cache[wname],
                                                 Tp.max(1) + alpha * aux_p,
                                                 Ti.max(1) + alpha * aux_i)})
+
+    # ---- P1: LOVO selection + per-class pricing shrinkage (see module doc) ----
+    lovo_report = None
+    if args.lovo:
+        from src.config import RunConfig
+        from src.data import load_splits, session_pool
+
+        nf = args.folds
+        KAPPAS = (0.0, 4.0, 16.0, 64.0, 256.0, -1.0)   # -1 = pure population pricing
+        ALPHAS = (0.0, 0.15, 0.3, 0.6, 1.0)     # 0.0 -> plain gcfisher
+
+        rcfg = RunConfig(dataset=args.dataset, protocol=args.protocol)
+        spl = load_splits(rcfg.splits_path)
+        vis = session_pool(spl, "unknown", "val")
+        vid_row = np.array([spl["sessions"][s]["video"] for s in vis])
+        assert len(vis) == raw[(names[0], "val")][1].shape[0], \
+            "val impostor row count mismatch (splits vs saved probs)"
+        uvid = np.array(sorted(set(vid_row.tolist())))
+        perm = np.random.default_rng(0).permutation(len(uvid))  # FIXED criterion seed
+        fold_sets = [set(uvid[perm[g::nf]].tolist()) for g in range(nf)]
+        v2f = {v: g for g, S in enumerate(fold_sets) for v in S}
+        row_fold = np.array([v2f[v] for v in vid_row])
+        print(f"\n=== P1 LOVO: {len(uvid)} unknown val videos -> {nf} folds | "
+              f"videos {'/'.join(str(len(S)) for S in fold_sets)} | "
+              f"sessions {'/'.join(str(int((row_fold == g).sum())) for g in range(nf))} ===")
+
+        def _tf_of(n):
+            return _logit if SPACE[n][0] == "logit" else (lambda x: x)
+
+        def _floor_of(n):
+            return 1e-3 if SPACE[n][0] == "logit" else 1e-4
+
+        def _beta_td(vals, floor):
+            t = np.quantile(vals, 0.9)
+            return float(max((vals[vals > t] - t).mean(), floor))
+
+        def _ecdf_p(ref, q, insamp, tf, beta):
+            """Empirical p of q vs ascending ref, exp tail past the ref max.
+
+            insamp rows are part of the reference: their own value is removed
+            from the count (true LOO) and the tail anchor is the max of the
+            OTHERS (ref[-2]) -- without this, in-sample rows can never exceed
+            the ln(m+1) ceiling while held-out rows can, which breaks the
+            exchangeability of calibration vs evaluation impostors (realized
+            FPR ~26% at a nominal 0.5% in the first P1 run)."""
+            m = ref.size
+            cnt = m - np.searchsorted(ref, q, side="left")
+            if isinstance(insamp, np.ndarray):
+                p = np.where(insamp, cnt, cnt + 1.0) / (m + 1.0)
+                hi_in = insamp & (cnt == 1)
+                hi_out = (~insamp) & (cnt == 0)
+                if hi_in.any():
+                    p[hi_in] = np.exp(-(tf(q[hi_in]) - tf(ref[-2])) / beta) / (m + 1.0)
+                if hi_out.any():
+                    p[hi_out] = np.exp(-(tf(q[hi_out]) - tf(ref[-1])) / beta) / (m + 1.0)
+                return p
+            p = (cnt + (0.0 if insamp else 1.0)) / (m + 1.0)
+            hi = cnt == (1 if insamp else 0)
+            if hi.any():
+                rtop = ref[-2] if (insamp and m >= 2) else ref[-1]
+                p[hi] = np.exp(-(tf(q[hi]) - tf(rtop)) / beta) / (m + 1.0)
+            return p
+
+        registry = {}
+
+        def pooled_metrics(correct, SP, SI):
+            """TPR@FPR from the pooled LOVO scores: fold impostors pooled across
+            folds are the honest 'unseen unknown videos' sample, so the nominal
+            and realized FPR coincide by construction (the first two P1 runs
+            compared candidates at nominal thresholds whose realized FPR
+            differed 26x -- gcfisher kappa=0 rode unpatrolled classes to 13%
+            realized FPR and an invalid top rank)."""
+            out = {"top1": float(np.mean(correct))}
+            for fr in GRID:
+                th = _threshold_for_fpr(SI, fr)
+                out[fr] = float(np.mean(correct & (SP >= th)))
+            return out
+
+        def fold_class_p(n, g):
+            """Class-wise p_emp / p_pop + fire depth k_c, fold-g complement ref.
+
+            k_c counts complement impostors whose class-c value exceeds the
+            POOLED Q99 (upper-tail fire depth): the first P1 run used the
+            pooled median, which makes every class ~1950 'deep' and the
+            kappa<=64 shrinkage weight <2% -- inert by parameterization."""
+            keep = row_fold != g
+            Iref = srcm(n, "val")[1][keep]
+            r = np.sort(Iref, axis=0)
+            tf = _tf_of(n)
+            beta_emp = _beta_td(tf(Iref.max(1)), _floor_of(n))
+            Pq, Iq = srcm(n, "val")
+            pe_p = np.empty(Pq.shape, dtype=np.float64)
+            pe_i = np.empty(Iq.shape, dtype=np.float64)
+            for j in range(Pq.shape[1]):
+                rj = r[:, j]
+                pe_p[:, j] = _ecdf_p(rj, Pq[:, j], False, tf, beta_emp)
+                pe_i[:, j] = _ecdf_p(rj, Iq[:, j], keep, tf, beta_emp)
+            pool = np.sort(Iref.ravel())
+            beta_pop = _beta_td(tf(pool), _floor_of(n))
+            pp_p = _ecdf_p(pool, Pq.ravel(), False, tf, beta_pop).reshape(Pq.shape)
+            pp_i = _ecdf_p(pool, Iq.ravel(), False, tf, beta_pop).reshape(Iq.shape)
+            k_c = (Iref > np.quantile(pool, 0.99)).sum(0).astype(np.float64)
+            return pe_p, pe_i, pp_p, pp_i, k_c
+
+        def fold_sev(n, g):
+            """Scalar-evidence -ln p under fold-g complement reference."""
+            keep = row_fold != g
+            r = np.sort(_families(n, "val", 1)[FAM[n]][keep])
+            beta = _beta_td(r, 1e-6)
+            out = []
+            for k in (0, 1):
+                s = _families(n, "val", k)[FAM[n]]
+                insamp = keep if k == 1 else False
+                out.append(-np.log(_ecdf_p(r, s, insamp, lambda x: x, beta))
+                           .astype(np.float32))
+            return tuple(out)
+
+        # plain prob-space rules: scores are calibration-free; the pooled LOVO
+        # metric equals the plain val metric up to fold sampling.
+        wmap = dict(p_wlist)
+        wmap["equal"] = w0full
+        for (rule, use_T, wname), (sp, si, correct) in plain_scores.items():
+            registry[("plain", rule, use_T, wname)] = {
+                "rule": rule, "temp": use_T, "kappa": None, "alpha": None,
+                "wname": wname, "w": list(wmap[wname]), "correct": correct,
+                "sp": [sp.astype(np.float32)], "si": [si.astype(np.float32)]}
+
+        # shrunk class-wise pricing (gcfisher family); per-fold probe and
+        # held-out-impostor scores are pooled across folds for the criterion
+        for g in range(nf):
+            CP = {n: fold_class_p(n, g) for n in members}
+            SV = {n: fold_sev(n, g) for n in members}
+            m_imp = row_fold == g
+            for kap in KAPPAS:
+                Tm = {}
+                for n in members:
+                    pe_p, pe_i, pp_p, pp_i, k_c = CP[n]
+                    if kap == 0.0:
+                        mp = (pe_p, pe_i)
+                    elif kap < 0:
+                        mp = (pp_p, pp_i)
+                    else:
+                        wgt = (k_c / (k_c + kap))[None, :]
+                        mp = (wgt * pe_p + (1.0 - wgt) * pp_p,
+                              wgt * pe_i + (1.0 - wgt) * pp_i)
+                    Tm[n] = tuple(-np.log(M).astype(np.float32) for M in mp)
+                for wname, w in p_wlist:
+                    prs = [(n, u) for n, u in zip(members, wnrm(list(w))) if u > 0]
+                    Spc = sum(u * Tm[n][0] for n, u in prs).max(1)
+                    Sic = sum(u * Tm[n][1] for n, u in prs)[m_imp].max(1)
+                    aux_p = sum(u * SV[n][0] for n, u in prs)
+                    aux_i = sum(u * SV[n][1] for n, u in prs)[m_imp]
+                    key = ("shrunk", kap, wname)
+                    if key not in registry:
+                        registry[key] = {"w": list(w), "correct": correct_cache[wname],
+                                         "spc": [], "sic": [], "aux_p": [], "aux_i": []}
+                    rec = registry[key]
+                    rec["spc"].append(Spc.astype(np.float32))
+                    rec["sic"].append(Sic.astype(np.float32))
+                    rec["aux_p"].append(aux_p.astype(np.float32))
+                    rec["aux_i"].append(aux_i.astype(np.float32))
+            print(f"[lovo] fold {g} done")
+
+        rows = []
+        for key, rec in registry.items():
+            if key[0] == "plain":
+                m = pooled_metrics(np.tile(rec["correct"], len(rec["sp"])),
+                                   np.concatenate(rec["sp"]),
+                                   np.concatenate(rec["si"]))
+                rows.append({"rule": rec["rule"], "temp": rec["temp"],
+                             "kappa": None, "alpha": None, "wname": rec["wname"],
+                             "w": rec["w"], "lovo": m, "top1": m["top1"]})
+                continue
+            _, kap, wname = key
+            correct = np.tile(rec["correct"], nf)
+            SPC = np.concatenate(rec["spc"])
+            SIC = np.concatenate(rec["sic"])
+            AXP = np.concatenate(rec["aux_p"])
+            AXI = np.concatenate(rec["aux_i"])
+            for alpha in ALPHAS:
+                m = pooled_metrics(correct, SPC + alpha * AXP, SIC + alpha * AXI)
+                rows.append({"rule": "gcfisher" if alpha == 0.0 else "gcfisher_a",
+                             "temp": False, "kappa": kap, "alpha": alpha,
+                             "wname": wname, "w": rec["w"], "lovo": m,
+                             "top1": m["top1"]})
+        rows.sort(key=lambda r: (-r["lovo"][0.005], -r["lovo"][0.01],
+                                 -r["lovo"][0.05], -r["top1"]))
+
+        def _first(pred):
+            for r in rows:
+                if pred(r):
+                    return r
+            return None
+
+        print(f"\n{'rule':11s}{'kap':>5}{'a':>6} {'weights':24s} | "
+              f"LOVO @.5%  @1%  @5%  top1")
+        for r in rows[:15]:
+            kap = "-" if r["kappa"] is None else (
+                "inf" if r["kappa"] < 0 else ("%g" % r["kappa"]))
+            al = "-" if r["alpha"] is None else ("%g" % r["alpha"])
+            print(f"{r['rule']:11s}{kap:>5}{al:>6} {r['wname']:24s} | "
+                  f"{r['lovo'][0.005]:.3f} {r['lovo'][0.01]:.3f} {r['lovo'][0.05]:.3f} "
+                  f" {r['top1']:.3f}")
+        for lbl, pred in (("best geo", lambda r: r["rule"] == "geo" and not r["temp"]),
+                          ("best arith", lambda r: r["rule"] == "arith" and not r["temp"]),
+                          ("best kap=0", lambda r: r["kappa"] == 0.0),
+                          ("best kap=inf", lambda r: r["kappa"] == -1.0)):
+            r = _first(pred)
+            if r is not None:
+                kap = "inf" if r["kappa"] == -1.0 else r["kappa"]
+                print(f"{lbl:17s} kap={str(kap):>4} {r['wname']:24s} | "
+                      f"{r['lovo'][0.005]:.3f} {r['lovo'][0.01]:.3f} {r['lovo'][0.05]:.3f} "
+                      f" {r['top1']:.3f}")
+        spectrum = {}
+        for kap in KAPPAS:
+            for rule in (None, "gcfisher", "gcfisher_a"):
+                kk = _first(lambda r, k=kap, ru=rule: r["kappa"] == k
+                            and (ru is None or r["rule"] == ru))
+                if kk is not None:
+                    spectrum[f"{kap}|{rule or 'any'}"] = {
+                        "alpha": kk["alpha"], "wname": kk["wname"], "lovo": kk["lovo"]}
+
+        kc_stats = {}
+        for n in members:
+            Iref = srcm(n, "val")[1]
+            pool = np.sort(Iref.ravel())
+            k_c = (Iref > np.quantile(pool, 0.99)).sum(0)
+            kc_stats[n] = {"median": float(np.median(k_c)), "mean": float(k_c.mean()),
+                           "p10": float(np.percentile(k_c, 10)),
+                           "frac_lt2": float((k_c < 2).mean()),
+                           "frac_lt5": float((k_c < 5).mean())}
+            print(f"[k_c@Q99] {n:24s} median={kc_stats[n]['median']:.0f} "
+                  f"mean={kc_stats[n]['mean']:.0f} p10={kc_stats[n]['p10']:.0f} "
+                  f"<2:{kc_stats[n]['frac_lt2'] * 100:.0f}% "
+                  f"<5:{kc_stats[n]['frac_lt5'] * 100:.0f}%")
+
+        # test finals at the LOVO-selected configs (full-val calibration)
+        def full_pop_p(n):
+            Iref = srcm(n, "val")[1]
+            tf = _tf_of(n)
+            pool = np.sort(Iref.ravel())
+            beta = _beta_td(tf(pool), _floor_of(n))
+            out = [_ecdf_p(pool, M.ravel(), False, tf, beta).reshape(M.shape)
+                   for M in srcm(n, "test")]
+            return out, (Iref > np.quantile(pool, 0.99)).sum(0).astype(np.float64)
+
+        FULLP = {n: full_pop_p(n) for n in members}
+
+        def shrunk_test_m(kap, w, alpha):
+            prs = [(n, u) for n, u in zip(members, wnrm(list(w))) if u > 0]
+            Sp = Si = None
+            aux_p = aux_i = 0.0
+            for n, u in prs:
+                r = np.sort(srcm(n, "val")[1], axis=0)
+                tf = _tf_of(n)
+                beta = SPACE[n][1]
+                Pq, Iq = srcm(n, "test")
+                pe_p = np.empty(Pq.shape, dtype=np.float64)
+                pe_i = np.empty(Iq.shape, dtype=np.float64)
+                for j in range(Pq.shape[1]):
+                    rj = r[:, j]
+                    pe_p[:, j] = _ecdf_p(rj, Pq[:, j], False, tf, beta)
+                    pe_i[:, j] = _ecdf_p(rj, Iq[:, j], False, tf, beta)
+                pp_p, pp_i = FULLP[n][0]
+                k_c = FULLP[n][1]
+                if kap == 0.0:
+                    mp = (pe_p, pe_i)
+                elif kap < 0:
+                    mp = (pp_p, pp_i)
+                else:
+                    wgt = (k_c / (k_c + kap))[None, :]
+                    mp = (wgt * pe_p + (1.0 - wgt) * pp_p,
+                          wgt * pe_i + (1.0 - wgt) * pp_i)
+                Tp = -np.log(mp[0]).astype(np.float32)
+                Ti = -np.log(mp[1]).astype(np.float32)
+                Sp = u * Tp if Sp is None else Sp + u * Tp
+                Si = u * Ti if Si is None else Si + u * Ti
+                aux_p = aux_p + u * SEV[(n, "test")][0]
+                aux_i = aux_i + u * SEV[(n, "test")][1]
+            Pv = combine("geo", pw(list(w)), [raw[(n, "test")][0] for n in names])
+            return score_metrics(Pv, y["test"], Sp.max(1) + alpha * aux_p,
+                                 Si.max(1) + alpha * aux_i, n_boot=1000)
+
+        picked, seen = [], set()
+
+        def _pick(r):
+            if r is None:
+                return
+            k_ = (r["rule"], r["temp"], r["kappa"], r["alpha"], r["wname"])
+            if k_ not in seen:
+                seen.add(k_)
+                picked.append(r)
+
+        for r in rows[:3]:
+            _pick(r)
+        _pick(_first(lambda r: r["rule"] == "arith" and not r["temp"]
+                     and r["wname"] == "equal"))
+        _pick(_first(lambda r: r["rule"] == "geo" and not r["temp"]))
+        _pick(_first(lambda r: r["kappa"] == 0.0))
+        _pick(_first(lambda r: r["kappa"] == -1.0))
+        _pick(_first(lambda r: r["rule"] == "gcfisher"))
+
+        print("\n--- P1 LOVO TEST (full-val calibration at selected configs) ---")
+        lovo_finals = []
+        for r in picked:
+            if r["rule"] in ("arith", "geo", "min"):
+                wv = list(r["w"])
+                Pv = combine(r["rule"], pw(wv),
+                             [scaled(n, "test", r["temp"])[0] for n in names])
+                Iv = combine(r["rule"], pw(wv),
+                             [scaled(n, "test", r["temp"])[1] for n in names])
+                m = open_set_metrics(Pv, y["test"], Iv.max(1), n_boot=1000)
+            else:
+                m = shrunk_test_m(r["kappa"], r["w"], r["alpha"] or 0.0)
+            m["fpr"] = {str(k): v for k, v in m["fpr"].items()}
+            kap = "inf" if r["kappa"] == -1.0 else r["kappa"]
+            tag = (f"{r['rule']}|T={r['temp']}|{r['wname']}"
+                   + (f"|kap={kap}|a={r['alpha']}" if r["kappa"] is not None else ""))
+            print(f"{tag:52s} top1={m['closed']['top1']:.3f} "
+                  f"@.5%={m['fpr']['0.005']['tpr']:.3f} "
+                  f"@1%={m['fpr']['0.01']['tpr']:.3f} "
+                  f"@5%={m['fpr']['0.05']['tpr']:.3f} "
+                  f"AUROC={m['auroc_detection']:.3f}")
+            lovo_finals.append({"config": tag, "lovo": r["lovo"], "test": m})
+
+        lovo_report = {
+            "folds": {"videos": [len(S) for S in fold_sets],
+                      "sessions": [int((row_fold == g).sum()) for g in range(nf)],
+                      "seed": 0},
+            "kappas": list(KAPPAS), "alphas": list(ALPHAS),
+            "k_c_stats": kc_stats,
+            "spectrum": spectrum,
+            "top15": [{k_: r[k_] for k_ in ("rule", "temp", "kappa", "alpha",
+                                            "wname", "w", "top1", "lovo")}
+                      for r in rows[:15]],
+            "finals": lovo_finals,
+        }
 
     variants.sort(key=lambda v: (-v["val"][0.005], -v["val"][0.01], -v["val"]["top1"]))
     print(f"\n{'rule':10s} {'T':5s} {'weights':30s} | val @.5%  @1%   @5%   top1")
@@ -529,11 +888,13 @@ def main():
 
     out = PROJECT_ROOT / "runs" / (args.out or f"combo_{args.dataset}")
     out.mkdir(parents=True, exist_ok=True)
-    (out / "report.json").write_text(
-        json.dumps({"members": names, "temps": temps,
-                    "families": FAM, "pval_ref": {n: len(REF[n]) for n in names},
-                    "top_variants": variants[:12], "finals": finals},
-                   indent=1, default=str), encoding="utf-8")
+    rep = {"members": names, "temps": temps,
+           "families": FAM, "pval_ref": {n: len(REF[n]) for n in names},
+           "top_variants": variants[:12], "finals": finals}
+    if lovo_report is not None:
+        rep["lovo"] = lovo_report
+    (out / "report.json").write_text(json.dumps(rep, indent=1, default=str),
+                                     encoding="utf-8")
     print(f"[wrote] {out / 'report.json'}")
 
 
