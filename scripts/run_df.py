@@ -73,13 +73,19 @@ def main():
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--model-seed", type=int, default=None,
+                    help="override ONLY the model/augmentation randomness "
+                         "(torch/np/DFData); the split keeps --seed. Used by "
+                         "the multi-seed robustness runs so every seed "
+                         "shares the same s42 strict split.")
     ap.add_argument("--tag", required=True)
     ap.add_argument("--load", action="store_true",
                     help="skip training, evaluate runs/{tag}/model.pt")
     args = ap.parse_args()
+    mseed = args.model_seed if args.model_seed is not None else args.seed
 
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    torch.manual_seed(mseed)
+    np.random.seed(mseed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     rcfg = RunConfig(dataset=args.dataset, protocol=args.protocol)
@@ -108,7 +114,7 @@ def main():
     def mk(pool, augment):
         return DFData(cache, pool, labels, channels, args.fusion, args.value,
                       args.dt, chan_emb=args.chan_emb, augment=augment,
-                      seed=args.seed)
+                      seed=mseed)
 
     ds = {name: mk(pool, name == "train") for name, pool in pools.items()}
     ld = {name: DataLoader(d, batch_size=args.batch if name == "train" else 256,
