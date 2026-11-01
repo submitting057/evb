@@ -38,6 +38,13 @@ on VAL and added to gcfisher as auxiliary scalar evidence:
   gcfisher_a: score = max_c class-wise Fisher + alpha * weighted scalar evidence
               (whole-vector veto on top of the per-class AND gate).
 
+A3 gallery-cosine members (--cos-tags): per-class cosine-to-gallery-template
+matrices from scripts/run_gallery_cos.py.  They are SCORE-ONLY members: they
+join the class-wise ECDF and the scalar evidence (with their own raw-space
+tail extension), but NOT the prob-space rules or the argmax (cosines are not
+probabilities; the closed-set answer stays with the prob ensemble).  Weights
+live on the full member list; prob rules use the renormalized prob subset.
+
 Selection: weights/temperature/rule chosen by VAL TPR@0.5%FPR (tie-break @1%).
 Test is only reported, never used for selection.
 """
@@ -131,8 +138,11 @@ def main():
     ap.add_argument("--step", type=float, default=0.05)
     ap.add_argument("--out", default=None,
                     help="output dir name under runs/ (default combo_{dataset})")
+    ap.add_argument("--cos-tags", default="",
+                    help="comma list of gallery-cosine member dirs (score-only)")
     args = ap.parse_args()
     tags = [t for t in args.df_tags.split(",") if t]
+    cos_tags = [t for t in args.cos_tags.split(",") if t]
 
     z = np.load(PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}.npz")
     names = ["lgbm"] + tags
@@ -155,6 +165,22 @@ def main():
                 d = np.load(p)
                 assert (d["probe_y"] == y[split]).all(), "logit row order mismatch"
                 LOG[(t, split)] = (d["probe"], d["imp"])
+
+    # A3: gallery-cosine members, raw cosines (NOT row-normalized)
+    cosset = set(cos_tags)
+    members = names + cos_tags
+    COS = {}
+    for t in cos_tags:
+        for split in ("val", "test"):
+            d = np.load(PROJECT_ROOT / "runs" / t / f"probs_{split}.npz")
+            assert (d["probe_y"] == y[split]).all(), "cos row order mismatch"
+            COS[(t, split)] = (d["probe"], d["imp"])
+
+    def srcm(n, split):
+        return COS[(n, split)] if n in cosset else raw[(n, split)]
+
+    def mat(n, split, k):
+        return srcm(n, split)[k]
 
     temps = {n: fit_temp(raw[(n, "val")][0], y["val"]) for n in names}
     print("members+temperature:", {n: temps[n] for n in names})
@@ -223,29 +249,34 @@ def main():
         return m
 
     # ---- B1 fix: class-wise ECDF (keeps the per-class AND gate in p-space) ----
-    SREF = {n: np.sort(raw[(n, "val")][1], axis=0) for n in names}  # per-class sorted
     # Empirical p floors at 1/(n+1): without an extension, ~24% of impostors and
     # ~91% of correct probes tie exactly at the ceiling S=ln(n+1) and TPR@0.5%
     # degenerates into float-rounding luck. Extend the tail beyond each class's
-    # reference max with a shifted-exponential in logit space; the scale beta is
-    # estimated per member from the top decile of its val-impostor max-probs.
+    # reference max with a shifted exponential: in logit space for prob members,
+    # in raw space for cosine members; scale beta = top-decile mean excess.
     def _logit(x):
         x = np.clip(x, 1e-7, 1 - 1e-7)
         return np.log(x / (1 - x))
-    TAILB = {}
+    SPACE = {}
     for n in names:
         g = _logit(raw[(n, "val")][1].max(1))
         t = np.quantile(g, 0.9)
-        e = g[g > t] - t
-        TAILB[n] = float(max(e.mean(), 1e-3))
-    print("logit tail scales beta:", {n: round(TAILB[n], 3) for n in names})
+        SPACE[n] = ("logit", float(max((g[g > t] - t).mean(), 1e-3)))
+    for n in cos_tags:
+        s = COS[(n, "val")][1].max(1)
+        t = np.quantile(s, 0.9)
+        SPACE[n] = ("raw", float(max((s[s > t] - t).mean(), 1e-4)))
+    print("tail scales:", {n: f"{m}:{round(b, 3)}" for n, (m, b) in SPACE.items()})
     _CT = {}
 
     def ctrans(rule, n, split):
-        """Transformed per-class p matrices for member n; cached."""
+        """Transformed per-class p matrices for member n; cached.
+        Reference is ALWAYS the member's VAL-impostor distribution."""
         key = (rule, n, split)
         if key not in _CT:
-            r = SREF[n]
+            mode, beta = SPACE[n]
+            tf = _logit if mode == "logit" else (lambda x: x)
+            r = np.sort(srcm(n, "val")[1], axis=0)
             m = r.shape[0]
             if rule == "cfisher":
                 f = lambda M: -np.log(M)
@@ -254,7 +285,7 @@ def main():
             else:
                 raise ValueError(rule)
             out = []
-            for k, M in enumerate(raw[(n, split)]):        # k=0 probe, k=1 impostor
+            for k, M in enumerate(srcm(n, split)):         # k=0 probe, k=1 impostor
                 add = 0 if (split == "val" and k == 1) else 1   # LOO, see PV above
                 Pc = np.empty(M.shape, dtype=np.float64)
                 for j in range(M.shape[1]):
@@ -263,15 +294,15 @@ def main():
                     Pc[:, j] = (add + cnt) / (m + 1.0)
                     hi = cnt == 0                           # above the whole reference
                     if hi.any():
-                        dg = _logit(M[hi, j]) - _logit(rj[-1])
-                        Pc[hi, j] = np.exp(-dg / TAILB[n]) / (m + 1.0)
+                        dg = tf(M[hi, j]) - tf(rj[-1])
+                        Pc[hi, j] = np.exp(-dg / beta) / (m + 1.0)
                 out.append(f(Pc).astype(np.float32))
             _CT[key] = tuple(out)
         return _CT[key]
 
     def combine_cmat(rule, ws, split):
         """Combined per-class score matrix -> (probe_S, imp_S)."""
-        pairs = [(n, w) for n, w in zip(names, ws) if w > 0]
+        pairs = [(n, w) for n, w in zip(members, ws) if w > 0]
         s = sum(w for _, w in pairs)
         pairs = [(n, w / s) for n, w in pairs]
         Tp = sum(w * ctrans(rule, n, split)[0] for n, w in pairs)
@@ -280,8 +311,11 @@ def main():
 
     # ---- A2: per-member scalar score families + auxiliary evidence ----
     def _families(n, split, k):
-        M = raw[(n, split)][k]
+        M = mat(n, split, k)
         part = np.partition(M, -2, 1)
+        if n in cosset:                       # cosines: only shape statistics
+            return {"maxval": M.max(1),
+                    "margin": part[:, -1] - part[:, -2]}
         out = {"maxprob": M.max(1),
                "negent": (M * np.log(np.clip(M, 1e-12, 1))).sum(1),  # = -entropy
                "margin": part[:, -1] - part[:, -2]}
@@ -295,13 +329,13 @@ def main():
     def _quick_family(n, fam, split):
         sp = _families(n, split, 0)[fam]
         si = _families(n, split, 1)[fam]
-        correct = raw[(n, split)][0].argmax(1) == y[split]
+        correct = mat(n, split, 0).argmax(1) == y[split]
         return {f: float(np.mean(correct & (sp >= _threshold_for_fpr(si, f))))
                 for f in GRID}
 
     print("\nA2 score-family ablation (single member; * = val-chosen):")
     FAM = {}
-    for n in names:
+    for n in members:
         rows = []
         for fam in _families(n, "val", 0):
             rows.append((fam, _quick_family(n, fam, "val"),
@@ -313,14 +347,14 @@ def main():
                   f"   test@.5%={t[0.005]:.3f} @1%={t[0.01]:.3f}")
 
     # scalar-evidence ECDF p-values (LOO for val impostors, raw-space tail ext)
-    SREF2 = {n: np.sort(_families(n, "val", 1)[FAM[n]]) for n in names}
+    SREF2 = {n: np.sort(_families(n, "val", 1)[FAM[n]]) for n in members}
     SB = {}
-    for n in names:
+    for n in members:
         r = SREF2[n]
         t0 = np.quantile(r, 0.9)
         SB[n] = float(max((r[r > t0] - t0).mean(), 1e-6))
     SEV = {}
-    for n in names:
+    for n in members:
         r, m = SREF2[n], len(SREF2[n])
         for split in ("val", "test"):
             evs = []
@@ -350,36 +384,53 @@ def main():
             return E / E.sum(1, keepdims=True)
         return f(Pv), f(I)
 
+    def pw(w):
+        """Renormalized prob-member subset of a full-member weight vector."""
+        s = sum(w[:len(names)])
+        return [wi / s for wi in w[:len(names)]] if s > 1e-9 else None
+
+    w0full = tuple(round(1.0 / len(members), 4) for _ in members)
+    p_wlist = [("equal", w0full)] + [
+        (f"w={w}", w) for w in simplex(args.step, len(members))
+        if sum(w[:len(names)]) > 1e-9]
+
+    cmat_cache = {}                       # weight -> combined matrices (val only)
+
+    def cmat_w(rule, wname, w):
+        key = (rule, wname)
+        if key not in cmat_cache:
+            cmat_cache[key] = combine_cmat(rule, list(w), "val")
+        return cmat_cache[key]
+
     variants = []
     for use_T in (False, True):
         for rule in ("arith", "geo", "min"):
-            w0 = tuple(round(1.0 / len(names), 4) for _ in names)
-            cands = [("equal", w0)] if rule == "min" else \
-                [("equal", w0)] + [(f"w={w}", w) for w in simplex(args.step, len(names))]
+            cands = [("equal", w0full)] if rule == "min" else p_wlist
             for wname, w in cands:
-                Pv = combine(rule, list(w), [scaled(n, "val", use_T)[0] for n in names])
-                Iv = combine(rule, list(w), [scaled(n, "val", use_T)[1] for n in names])
+                Pw = pw(list(w))
+                Pv = combine(rule, Pw, [scaled(n, "val", use_T)[0] for n in names])
+                Iv = combine(rule, Pw, [scaled(n, "val", use_T)[1] for n in names])
                 variants.append({"rule": rule, "temp": use_T, "w": list(w),
                                  "wname": wname, "val": quick(Pv, y["val"], Iv)})
 
     # B1 p-space rules (no temperature: the ECDF is the calibration).
-    # argmax/top1 come from the geo ensemble with the same weights -> cache them.
-    p_wlist = [("equal", w0)] + [(f"w={w}", w) for w in simplex(args.step, len(names))]
+    # argmax/top1 come from the geo ensemble over PROB members -> cache them.
     correct_cache = {}
     for wname, w in p_wlist:
-        Pv = combine("geo", list(w), [raw[(n, "val")][0] for n in names])
+        Pv = combine("geo", pw(list(w)), [raw[(n, "val")][0] for n in names])
         correct_cache[wname] = Pv.argmax(1) == y["val"]
-    sp, si = combine_pscore("ptippett", list(w0), "val")
-    variants.append({"rule": "ptippett", "temp": False, "w": list(w0), "wname": "equal",
+    sp, si = combine_pscore("ptippett", pw(list(w0full)), "val")
+    variants.append({"rule": "ptippett", "temp": False, "w": list(w0full),
+                     "wname": "equal",
                      "val": quick_score(correct_cache["equal"], sp, si)})
     for rule in ("pfisher", "pstouffer", "pmean"):
         for wname, w in p_wlist:
-            sp, si = combine_pscore(rule, list(w), "val")
+            sp, si = combine_pscore(rule, pw(list(w)), "val")
             variants.append({"rule": rule, "temp": False, "w": list(w), "wname": wname,
                              "val": quick_score(correct_cache[wname], sp, si)})
     for rule in ("cfisher", "cpmean"):
         for wname, w in p_wlist:
-            Tp, Ti = combine_cmat(rule, list(w), "val")
+            Tp, Ti = cmat_w(rule, wname, w)
             if rule == "cfisher":  # hybrid twin: geo argmax + cfisher score
                 variants.append({"rule": "gcfisher", "temp": False, "w": list(w),
                                  "wname": wname,
@@ -393,9 +444,9 @@ def main():
     for alpha in (0.15, 0.3, 0.6, 1.0):
         for wname, w in p_wlist:
             wn = wnrm(list(w))
-            Tp, Ti = combine_cmat("cfisher", list(w), "val")
-            aux_p = sum(u * SEV[(n, "val")][0] for n, u in zip(names, wn) if u > 0)
-            aux_i = sum(u * SEV[(n, "val")][1] for n, u in zip(names, wn) if u > 0)
+            Tp, Ti = cmat_w("cfisher", wname, w)
+            aux_p = sum(u * SEV[(n, "val")][0] for n, u in zip(members, wn) if u > 0)
+            aux_i = sum(u * SEV[(n, "val")][1] for n, u in zip(members, wn) if u > 0)
             variants.append({"rule": "gcfisher_a", "temp": False, "alpha": alpha,
                              "w": list(w), "wname": wname,
                              "val": quick_score(correct_cache[wname],
@@ -440,25 +491,27 @@ def main():
         if v["rule"] == "gcfisher_a":
             wn = wnrm(v["w"])
             Tp, Ti = combine_cmat("cfisher", v["w"], "test")
-            aux_p = sum(u * SEV[(n, "test")][0] for n, u in zip(names, wn) if u > 0)
-            aux_i = sum(u * SEV[(n, "test")][1] for n, u in zip(names, wn) if u > 0)
-            Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
+            aux_p = sum(u * SEV[(n, "test")][0] for n, u in zip(members, wn) if u > 0)
+            aux_i = sum(u * SEV[(n, "test")][1] for n, u in zip(members, wn) if u > 0)
+            Pv = combine("geo", pw(v["w"]), [raw[(n, "test")][0] for n in names])
             m = score_metrics(Pv, y["test"], Tp.max(1) + v["alpha"] * aux_p,
                               Ti.max(1) + v["alpha"] * aux_i, n_boot=1000)
         elif v["rule"] == "gcfisher":
             Tp, Ti = combine_cmat("cfisher", v["w"], "test")
-            Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
+            Pv = combine("geo", pw(v["w"]), [raw[(n, "test")][0] for n in names])
             m = score_metrics(Pv, y["test"], Tp.max(1), Ti.max(1), n_boot=1000)
         elif v["rule"] in ("cfisher", "cpmean"):
             Tp, Ti = combine_cmat(v["rule"], v["w"], "test")
             m = open_set_metrics(Tp, y["test"], Ti.max(1), n_boot=1000)
         elif v["rule"].startswith("p"):
-            Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
-            sp, si = combine_pscore(v["rule"], v["w"], "test")
+            Pv = combine("geo", pw(v["w"]), [raw[(n, "test")][0] for n in names])
+            sp, si = combine_pscore(v["rule"], pw(v["w"]), "test")
             m = score_metrics(Pv, y["test"], sp, si, n_boot=1000)
         else:
-            Pv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[0] for n in names])
-            Iv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[1] for n in names])
+            Pv = combine(v["rule"], pw(v["w"]),
+                         [scaled(n, "test", v["temp"])[0] for n in names])
+            Iv = combine(v["rule"], pw(v["w"]),
+                         [scaled(n, "test", v["temp"])[1] for n in names])
             m = open_set_metrics(Pv, y["test"], Iv.max(1), n_boot=1000)
         m["fpr"] = {str(k): v for k, v in m["fpr"].items()}
         tag = f"{v['rule']}|T={v['temp']}|{v['wname']}" + \

@@ -15,3 +15,5 @@ __pycache__/
 .zcode/
 runs/10s_bins_s42/best.pt
 runs/10s_segs_s42/best.pt
+runs/combo*.log
+runs/combo_regcheck/
