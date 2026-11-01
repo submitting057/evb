@@ -20,6 +20,9 @@
 | 类维 ECDF 组合 gcfisher | .969 | .817 | .840 | .912 |
 | **gcfisher + 标量打分族证据（当前最优）** | **.974** | **.861** | **.884** | **.933** |
 
+注：上表为评测惯例口径（验证/测试冒充者共享未知视频）。视频不交叠严格协议下
+gcfisher 系不迁移（@0.5% .386），稳健水平 arith .643 / geo .617（findings §3.5 第六轮）。
+
 结构：`src/`（config/data/segment/dfnet/evaluate 等）、`scripts/`（实验入口）、
 `splits/`（固定划分）、`runs/`（报告 + 最优权重，缓存与概率矩阵不入库）。
 数据位于 `E:\evb\datasets`（仓库外）。环境见 `requirements.txt`。
