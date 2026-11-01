@@ -8,6 +8,29 @@ Rules:
   min   : elementwise min over members (hard AND gate, equal weights)
   + temperature: per-member T fitted on val probes (NLL) before combining.
 
+B1 p-space rules (ECDF calibration, scale-free soft AND): each member's scalar
+score s = max prob is first converted to a p-value against that member's own
+VAL-impostor score distribution (conservative empirical p =
+(1 + #{ref >= s}) / (n_ref + 1)), then the p-values are combined:
+  pfisher   : S = -sum_i w_i ln p_i            (weighted Fisher)
+  pstouffer : S = sum_i w_i Phi^-1(1 - p_i)    (weighted Stouffer z)
+  ptippett  : S = -ln min_i p_i                (weakest evidence; equal weights)
+  pmean     : S = sum_i w_i (1 - p_i)          (linear soft AND)
+For p-space rules the argmax/top1 come from the geo ensemble with the same
+weights; only the open-set score lives in p-space. No temperature for p-rules
+(the ECDF is the calibration).
+
+Class-wise ECDF rules (B1 fix; scalar p-rules lose the per-class AND gate that
+the prob-space geo mean gets for free -- impostors have ~1% cross-member argmax
+agreement vs ~91% for correct probes, so a score that ignores WHICH class is
+agreed on lets disagreeing-but-confident impostors float to the top):
+  cfisher : S_c = -sum_i w_i ln p_i,c  per class, score = max_c S_c (argmax too)
+  cpmean  : S_c = sum_i w_i (1 - p_i,c) per class
+where p_i,c compares member i's prob FOR CLASS c against the val-impostor
+distribution of probs for that same class.
+  gcfisher: hybrid -- argmax/top1 from the geo ensemble (best closed-set),
+            open-set score from cfisher with the same weights.
+
 Selection: weights/temperature/rule chosen by VAL TPR@0.5%FPR (tie-break @1%).
 Test is only reported, never used for selection.
 """
@@ -21,8 +44,11 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scipy.stats import norm as _norm
+
 from src.config import PROJECT_ROOT
-from src.evaluate import _threshold_for_fpr, open_set_metrics
+from src.evaluate import (_threshold_for_fpr, open_set_metrics,
+                          open_set_with_custom_score, tpr_at_fpr)
 
 GRID = (0.005, 0.01, 0.05)
 
@@ -57,6 +83,16 @@ def quick(P, y, I):
     for f in GRID:
         th = _threshold_for_fpr(I.max(1), f)
         out[f] = float(np.mean(correct & (best >= th)))
+    return out
+
+
+def quick_score(correct, sp, si):
+    """quick() for scalar-score rules: top1 from precomputed argmax-correctness,
+    open-set TPR from explicit probe/impostor scores."""
+    out = {"top1": float(np.mean(correct))}
+    for f in GRID:
+        th = _threshold_for_fpr(si, f)
+        out[f] = float(np.mean(correct & (sp >= th)))
     return out
 
 
@@ -105,6 +141,125 @@ def main():
     temps = {n: fit_temp(raw[(n, "val")][0], y["val"]) for n in names}
     print("members+temperature:", {n: temps[n] for n in names})
 
+    # ---- B1: ECDF p-values against each member's own VAL-impostor scores ----
+    REF = {n: np.sort(raw[(n, "val")][1].max(1)) for n in names}
+    PV = {}
+    for n in names:
+        m = len(REF[n])
+        for split in ("val", "test"):
+            pls = []
+            for k, M in enumerate(raw[(n, split)]):        # k=0 probe, k=1 impostor
+                # leave-one-out for val impostors (their scores are in the ref):
+                # with the plain +1 they can never reach the saturation level that
+                # out-of-sample rows can, which made val selection blind to
+                # knife-edge configs -- LOO makes them exactly exchangeable.
+                add = 0 if (split == "val" and k == 1) else 1
+                pls.append((add + m - np.searchsorted(REF[n], M.max(1), side="left"))
+                           / (m + 1.0))
+            PV[(n, split)] = tuple(pls)
+    print("pval ref sizes (val impostors):", {n: len(REF[n]) for n in names})
+
+    def combine_pscore(rule, ws, split):
+        """Combined scalar open-set score in p-space -> (probe_scores, imp_scores).
+        Higher = more confidently 'known' on every rule."""
+        pairs = [(n, w) for n, w in zip(names, ws) if w > 0]
+        s = sum(w for _, w in pairs)
+        pairs = [(n, w / s) for n, w in pairs]
+        A = np.stack([PV[(n, split)][0] for n, _ in pairs])
+        B = np.stack([PV[(n, split)][1] for n, _ in pairs])
+        if rule == "pfisher":
+            f = lambda M: -np.log(M)
+        elif rule == "pstouffer":
+            f = lambda M: _norm.ppf(1.0 - np.clip(M, 1e-12, 1.0 - 1e-12))
+        elif rule == "ptippett":
+            return -np.log(A.min(0)), -np.log(B.min(0))
+        elif rule == "pmean":
+            f = lambda M: 1.0 - M
+        else:
+            raise ValueError(rule)
+        W = np.array([w for _, w in pairs])[:, None]
+        return (W * f(A)).sum(0), (W * f(B)).sum(0)
+
+    def score_metrics(P, yy, sp, si, n_boot=1000, seed=0):
+        """Open-set metrics for a custom scalar score (argmax still from P),
+        incl. detection AUROC and bootstrap CI (mirrors open_set_metrics)."""
+        m = open_set_with_custom_score(P, yy, sp, si)
+        lab = np.concatenate([np.ones(len(sp)), np.zeros(len(si))])
+        sc = np.concatenate([sp, si])
+        rk = np.argsort(np.argsort(sc)) + 1
+        pos = lab == 1
+        npos, nneg = int(pos.sum()), int((~pos).sum())
+        m["auroc_detection"] = float((rk[pos].sum() - npos * (npos + 1) / 2) / (npos * nneg))
+        m["n_probes"], m["n_impostors"] = int(len(sp)), int(len(si))
+        correct = P.argmax(1) == yy
+        rng = np.random.default_rng(seed)
+        for f in GRID:
+            boot = []
+            for _ in range(n_boot):
+                pi = rng.integers(0, len(sp), len(sp))
+                ii = rng.integers(0, len(si), len(si))
+                t, _ = tpr_at_fpr(sp[pi], correct[pi], si[ii], f)
+                boot.append(t)
+            m["fpr"][f]["tpr_ci95"] = [float(np.percentile(boot, 2.5)),
+                                       float(np.percentile(boot, 97.5))]
+        return m
+
+    # ---- B1 fix: class-wise ECDF (keeps the per-class AND gate in p-space) ----
+    SREF = {n: np.sort(raw[(n, "val")][1], axis=0) for n in names}  # per-class sorted
+    # Empirical p floors at 1/(n+1): without an extension, ~24% of impostors and
+    # ~91% of correct probes tie exactly at the ceiling S=ln(n+1) and TPR@0.5%
+    # degenerates into float-rounding luck. Extend the tail beyond each class's
+    # reference max with a shifted-exponential in logit space; the scale beta is
+    # estimated per member from the top decile of its val-impostor max-probs.
+    def _logit(x):
+        x = np.clip(x, 1e-7, 1 - 1e-7)
+        return np.log(x / (1 - x))
+    TAILB = {}
+    for n in names:
+        g = _logit(raw[(n, "val")][1].max(1))
+        t = np.quantile(g, 0.9)
+        e = g[g > t] - t
+        TAILB[n] = float(max(e.mean(), 1e-3))
+    print("logit tail scales beta:", {n: round(TAILB[n], 3) for n in names})
+    _CT = {}
+
+    def ctrans(rule, n, split):
+        """Transformed per-class p matrices for member n; cached."""
+        key = (rule, n, split)
+        if key not in _CT:
+            r = SREF[n]
+            m = r.shape[0]
+            if rule == "cfisher":
+                f = lambda M: -np.log(M)
+            elif rule == "cpmean":
+                f = lambda M: 1.0 - M
+            else:
+                raise ValueError(rule)
+            out = []
+            for k, M in enumerate(raw[(n, split)]):        # k=0 probe, k=1 impostor
+                add = 0 if (split == "val" and k == 1) else 1   # LOO, see PV above
+                Pc = np.empty(M.shape, dtype=np.float64)
+                for j in range(M.shape[1]):
+                    rj = r[:, j]
+                    cnt = m - np.searchsorted(rj, M[:, j], side="left")
+                    Pc[:, j] = (add + cnt) / (m + 1.0)
+                    hi = cnt == 0                           # above the whole reference
+                    if hi.any():
+                        dg = _logit(M[hi, j]) - _logit(rj[-1])
+                        Pc[hi, j] = np.exp(-dg / TAILB[n]) / (m + 1.0)
+                out.append(f(Pc).astype(np.float32))
+            _CT[key] = tuple(out)
+        return _CT[key]
+
+    def combine_cmat(rule, ws, split):
+        """Combined per-class score matrix -> (probe_S, imp_S)."""
+        pairs = [(n, w) for n, w in zip(names, ws) if w > 0]
+        s = sum(w for _, w in pairs)
+        pairs = [(n, w / s) for n, w in pairs]
+        Tp = sum(w * ctrans(rule, n, split)[0] for n, w in pairs)
+        Ti = sum(w * ctrans(rule, n, split)[1] for n, w in pairs)
+        return Tp, Ti
+
     def scaled(n, split, use_T):
         Pv, I = raw[(n, split)]
         if not use_T or temps[n] == 1:
@@ -127,10 +282,38 @@ def main():
                 Iv = combine(rule, list(w), [scaled(n, "val", use_T)[1] for n in names])
                 variants.append({"rule": rule, "temp": use_T, "w": list(w),
                                  "wname": wname, "val": quick(Pv, y["val"], Iv)})
+
+    # B1 p-space rules (no temperature: the ECDF is the calibration).
+    # argmax/top1 come from the geo ensemble with the same weights -> cache them.
+    p_wlist = [("equal", w0)] + [(f"w={w}", w) for w in simplex(args.step, len(names))]
+    correct_cache = {}
+    for wname, w in p_wlist:
+        Pv = combine("geo", list(w), [raw[(n, "val")][0] for n in names])
+        correct_cache[wname] = Pv.argmax(1) == y["val"]
+    sp, si = combine_pscore("ptippett", list(w0), "val")
+    variants.append({"rule": "ptippett", "temp": False, "w": list(w0), "wname": "equal",
+                     "val": quick_score(correct_cache["equal"], sp, si)})
+    for rule in ("pfisher", "pstouffer", "pmean"):
+        for wname, w in p_wlist:
+            sp, si = combine_pscore(rule, list(w), "val")
+            variants.append({"rule": rule, "temp": False, "w": list(w), "wname": wname,
+                             "val": quick_score(correct_cache[wname], sp, si)})
+    for rule in ("cfisher", "cpmean"):
+        for wname, w in p_wlist:
+            Tp, Ti = combine_cmat(rule, list(w), "val")
+            if rule == "cfisher":  # hybrid twin: geo argmax + cfisher score
+                variants.append({"rule": "gcfisher", "temp": False, "w": list(w),
+                                 "wname": wname,
+                                 "val": quick_score(correct_cache[wname],
+                                                    Tp.max(1), Ti.max(1))})
+            correct = Tp.argmax(1) == y["val"]
+            variants.append({"rule": rule, "temp": False, "w": list(w), "wname": wname,
+                             "val": quick_score(correct, Tp.max(1), Ti.max(1))})
+
     variants.sort(key=lambda v: (-v["val"][0.005], -v["val"][0.01], -v["val"]["top1"]))
-    print(f"\n{'rule':6s} {'T':5s} {'weights':30s} | val @.5%  @1%   @5%   top1")
+    print(f"\n{'rule':10s} {'T':5s} {'weights':30s} | val @.5%  @1%   @5%   top1")
     for v in variants[:12]:
-        print(f"{v['rule']:6s} {str(v['temp']):5s} {v['wname']:30s} | "
+        print(f"{v['rule']:10s} {str(v['temp']):5s} {v['wname']:30s} | "
               f"{v['val'][0.005]:.3f}  {v['val'][0.01]:.3f}  {v['val'][0.05]:.3f}  "
               f"{v['val']['top1']:.3f}")
 
@@ -139,15 +322,40 @@ def main():
     keys, finals = [], []
     baselines = [v for v in variants if not v["temp"] and v["rule"] == "arith"
                  and v["wname"] == "equal"]
-    ordered = variants[:3] + baselines
+    extra = []
+    for v in variants:  # always also report best plain-geo and best p-space config
+        if not v["temp"] and v["rule"] == "geo":
+            extra.append(v)
+            break
+    for v in variants:
+        if v["rule"][0] == "p":
+            extra.append(v)
+            break
+    for v in variants:
+        if v["rule"][0] == "c":
+            extra.append(v)
+            break
+    ordered = variants[:3] + baselines + extra
     for v in ordered:
         key = (v["rule"], v["temp"], v["wname"])
         if key in keys:
             continue
         keys.append(key)
-        Pv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[0] for n in names])
-        Iv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[1] for n in names])
-        m = open_set_metrics(Pv, y["test"], Iv.max(1), n_boot=1000)
+        if v["rule"] == "gcfisher":
+            Tp, Ti = combine_cmat("cfisher", v["w"], "test")
+            Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
+            m = score_metrics(Pv, y["test"], Tp.max(1), Ti.max(1), n_boot=1000)
+        elif v["rule"] in ("cfisher", "cpmean"):
+            Tp, Ti = combine_cmat(v["rule"], v["w"], "test")
+            m = open_set_metrics(Tp, y["test"], Ti.max(1), n_boot=1000)
+        elif v["rule"].startswith("p"):
+            Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
+            sp, si = combine_pscore(v["rule"], v["w"], "test")
+            m = score_metrics(Pv, y["test"], sp, si, n_boot=1000)
+        else:
+            Pv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[0] for n in names])
+            Iv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[1] for n in names])
+            m = open_set_metrics(Pv, y["test"], Iv.max(1), n_boot=1000)
         m["fpr"] = {str(k): v for k, v in m["fpr"].items()}
         tag = f"{v['rule']}|T={v['temp']}|{v['wname']}"
         print(f"{tag:40s} top1={m['closed']['top1']:.3f} "
@@ -159,8 +367,9 @@ def main():
     out = PROJECT_ROOT / "runs" / f"combo_{args.dataset}"
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(
-        json.dumps({"members": names, "temps": temps, "top_variants": variants[:12],
-                    "finals": finals}, indent=1, default=str), encoding="utf-8")
+        json.dumps({"members": names, "temps": temps, "pval_ref": {n: len(REF[n]) for n in names},
+                    "top_variants": variants[:12], "finals": finals},
+                   indent=1, default=str), encoding="utf-8")
     print(f"[wrote] {out / 'report.json'}")
 
 
