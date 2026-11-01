@@ -5,12 +5,17 @@ known 会话 60/20/20，gallery_k=3，详见 findings.md §五）
 
 ## 最终系统
 
-**类维 ECDF 组合（gcfisher）**——成员不变（LGBM + DF + DF+dt 三路），组合器升级：
-argmax/top1 取加权几何平均（闭集最优），开集分 = 逐类 ECDF Fisher
-（每个"成员给类 c 的概率"对照"val 冒充者给类 c 的概率分布"转 p 值，
-S_c = −Σ wᵢ·ln pᵢ,ᶜ，得分 = max_c S_c；超参照天花板按 logit 指数尾延伸；
-val 冒充者自身用 LOO p 值）。权重在验证集上按 @0.5%FPR 网格搜索选出。
-机制与两个伪影坑见 findings.md §3.5 第三轮。
+**gcfisher_a = 类维 ECDF Fisher + 标量打分族证据**——成员不变（LGBM + DF +
+DF+dt 三路），纯后处理组合器：
+
+1. argmax/top1 取加权几何平均概率（闭集最优）；
+2. 开集分·类维部分：每个"成员给类 c 的概率"对照"val 冒充者给类 c 的概率分布"
+   转 p 值，S_c = −Σ wᵢ·ln pᵢ,ᶜ（超参照天花板按 logit 指数尾延伸；val 冒充者
+   自身用 LOO p 值）；
+3. 开集分·标量部分（A2）：每成员 val 选出的置信度统计量（lgbm→margin、
+   e100→负熵、dt→energy）同样转 ECDF p 值；
+4. 总分 = max_c S_c + α·Σ wᵢ·(−ln pᵢ,scalar)，α=.3，权重 .3/.3/.4（验证集
+   @0.5%FPR 网格选出）。机制与四轮演进见 findings.md §3.5。
 
 | 系统（test，10s） | top1 | @0.5% | @1% | @5% | AUROC |
 |---|---|---|---|---|---|
@@ -19,10 +24,11 @@ val 冒充者自身用 LOO p 值）。权重在验证集上按 @0.5%FPR 网格�
 | DF branch 全5+dt（df_branch_all_dt） | .934 | .063 | .169 | .573 | .892 |
 | mean(prob) 三路集成 | .948 | .640 | .704 | .781 | .936 |
 | 几何平均加权（.5/.3/.2） | .962 | .669 | .717 | .821 | .949 |
-| **gcfisher 加权（.2/.35/.45，val 选出）** | **.969** | **.817** | **.840** | **.912** | **.983** |
+| gcfisher 加权（.2/.35/.45） | .969 | .817 | .840 | .912 | .983 |
+| **gcfisher_a（α=.3，w=.3/.3/.4）** | **.974** | **.861** | **.884** | **.933** | **.986** |
 
-5s 版（LGBM + DF 两路 gcfisher，.25/.75）：top1 .920 / @0.5% .580 / @1% .650 /
-@5% .786（几何平均基线 .497/.587/.732）。
+5s 版（LGBM + DF 两路，gcfisher .25/.75；A2 附加证据无增益）：top1 .920 /
+@0.5% .580 / @1% .650 / @5% .786（几何平均基线 .497/.587/.732）。
 
 ## 单模型最优配置（DF branch）
 
@@ -65,8 +71,10 @@ python scripts/run_df.py --dataset 10s --fusion branch \
 python scripts/run_df.py --dataset 10s --fusion branch \
     --channels video_cdn,api,channel_info,thumbnail,other --epochs 100 --dt \
     --tag df_branch_all_dt
-# 4) 组合器搜索（规则×权重×温度网格 + 类维 ECDF 规则，验证集选模，test 仅报告）
-#    当前最优 gcfisher 即由该脚本选出（runs/combo_10s/report.json）
+# 4) 导出 logits（A2 打分族需要；同时产出 TTA 概率，供消融）
+python scripts/run_tta_dump.py --dataset 10s --tags df_branch_all_e100,df_branch_all_dt
+# 5) 组合器搜索（规则×权重×温度×α 网格 + 类维 ECDF + 标量证据，验证集选模）
+#    当前最优 gcfisher_a 即由该脚本选出（runs/combo_10s/report.json）
 python scripts/run_combiner.py --dataset 10s --df-tags df_branch_all_e100,df_branch_all_dt
 # 算术平均基线（可选，run_ensemble 为均值集成入口）
 python scripts/run_ensemble.py --dataset 10s --df-tag df_branch_all_e100,df_branch_all_dt
@@ -91,14 +99,16 @@ python scripts/run_df.py --dataset 10s --fusion branch \
 - `runs/df_branch_all_e100/model.pt`、`runs/df_branch_all_dt/model.pt`、
   `runs/df5_branch_all_e100/model.pt`：最优权重（含 args/hist 元数据）
 - `runs/{df_*,ens_*}/report.json`：全部配置的完整指标；
-  `runs/combo_{10s,5s}/report.json`：组合器全网格结果（当前最优 gcfisher）
-- `runs/{tag}/probs_{val,test}.npz`：概率矩阵（供新集成实验，免重训）
+  `runs/combo_{10s,5s}/report.json`：组合器全网格结果（当前最优 gcfisher_a）
+- `runs/{tag}/probs_{val,test}.npz`：概率矩阵；`runs/{tag}/logits_*.npz`：logits
+  （A2 打分族用）；`runs/{tag}_tta/`：TTA 概率（已证伪，留作对照）——
+  均为可重建产物，不入库
 
 ## 已知边界与后续方向
 
 - 全部结果基于单划分 seed=42；多 seed 均值±方差与协议敏感性未做（下一步首选）；
 - 100ep 时 val 仍缓升，容量/时长还有余量（video 8192、更宽 trunk）；
-- 开集组合器三轮演进：均值 .640 → 几何平均 .669 → 类维 ECDF .817（@0.5%，10s）；
-  温度校准为负结果；后续方向见 findings.md §3.6（A2 打分族 / A1 TTA / A3 gallery
-  余弦成员 / C 贪心成员选择 / ② 扩员）；
+- 开集组合器四轮演进：均值 .640 → 几何平均 .669 → 类维 ECDF .817 → +标量证据
+  .861（@0.5%，10s）；温度、标量 p 空间、TTA 均为负结果；后续方向见 findings.md
+  §3.6（A3 gallery 余弦成员 / C 贪心成员选择 / ② 扩员）；
 - 数据为单设备单网络环境；跨设备/跨网络泛化未验证。

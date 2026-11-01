@@ -31,6 +31,13 @@ distribution of probs for that same class.
   gcfisher: hybrid -- argmax/top1 from the geo ensemble (best closed-set),
             open-set score from cfisher with the same weights.
 
+A2 score families: per-member scalar confidence statistics beyond max-prob
+(max-logit / energy need runs/{tag}/logits_*.npz from run_tta_dump.py;
+neg-entropy / margin work from probs).  Each member's best family is chosen
+on VAL and added to gcfisher as auxiliary scalar evidence:
+  gcfisher_a: score = max_c class-wise Fisher + alpha * weighted scalar evidence
+              (whole-vector veto on top of the per-class AND gate).
+
 Selection: weights/temperature/rule chosen by VAL TPR@0.5%FPR (tie-break @1%).
 Test is only reported, never used for selection.
 """
@@ -122,6 +129,8 @@ def main():
     ap.add_argument("--dataset", default="10s")
     ap.add_argument("--df-tags", required=True)
     ap.add_argument("--step", type=float, default=0.05)
+    ap.add_argument("--out", default=None,
+                    help="output dir name under runs/ (default combo_{dataset})")
     args = ap.parse_args()
     tags = [t for t in args.df_tags.split(",") if t]
 
@@ -137,6 +146,15 @@ def main():
             d = np.load(PROJECT_ROOT / "runs" / t / f"probs_{split}.npz")
             assert (d["probe_y"] == y[split]).all(), "row order mismatch"
             raw[(t, split)] = (norm(d["probe"]), norm(d["imp"]))
+
+    LOG = {}                                        # A2: raw logits if dumped
+    for t in tags:
+        for split in ("val", "test"):
+            p = PROJECT_ROOT / "runs" / t / f"logits_{split}.npz"
+            if p.exists():
+                d = np.load(p)
+                assert (d["probe_y"] == y[split]).all(), "logit row order mismatch"
+                LOG[(t, split)] = (d["probe"], d["imp"])
 
     temps = {n: fit_temp(raw[(n, "val")][0], y["val"]) for n in names}
     print("members+temperature:", {n: temps[n] for n in names})
@@ -260,6 +278,67 @@ def main():
         Ti = sum(w * ctrans(rule, n, split)[1] for n, w in pairs)
         return Tp, Ti
 
+    # ---- A2: per-member scalar score families + auxiliary evidence ----
+    def _families(n, split, k):
+        M = raw[(n, split)][k]
+        part = np.partition(M, -2, 1)
+        out = {"maxprob": M.max(1),
+               "negent": (M * np.log(np.clip(M, 1e-12, 1))).sum(1),  # = -entropy
+               "margin": part[:, -1] - part[:, -2]}
+        if (n, split) in LOG:
+            L = np.asarray(LOG[(n, split)][k], dtype=np.float64)
+            mx = L.max(1, keepdims=True)
+            out["maxlogit"] = mx[:, 0]
+            out["energy"] = mx[:, 0] + np.log(np.exp(L - mx).sum(1))
+        return out
+
+    def _quick_family(n, fam, split):
+        sp = _families(n, split, 0)[fam]
+        si = _families(n, split, 1)[fam]
+        correct = raw[(n, split)][0].argmax(1) == y[split]
+        return {f: float(np.mean(correct & (sp >= _threshold_for_fpr(si, f))))
+                for f in GRID}
+
+    print("\nA2 score-family ablation (single member; * = val-chosen):")
+    FAM = {}
+    for n in names:
+        rows = []
+        for fam in _families(n, "val", 0):
+            rows.append((fam, _quick_family(n, fam, "val"),
+                         _quick_family(n, fam, "test")))
+        FAM[n] = max(rows, key=lambda r: (r[1][0.005], r[1][0.01]))[0]
+        for fam, v, t in rows:
+            mark = "*" if fam == FAM[n] else " "
+            print(f"  {n:24s} {fam:9s}{mark} val@.5%={v[0.005]:.3f} @1%={v[0.01]:.3f}"
+                  f"   test@.5%={t[0.005]:.3f} @1%={t[0.01]:.3f}")
+
+    # scalar-evidence ECDF p-values (LOO for val impostors, raw-space tail ext)
+    SREF2 = {n: np.sort(_families(n, "val", 1)[FAM[n]]) for n in names}
+    SB = {}
+    for n in names:
+        r = SREF2[n]
+        t0 = np.quantile(r, 0.9)
+        SB[n] = float(max((r[r > t0] - t0).mean(), 1e-6))
+    SEV = {}
+    for n in names:
+        r, m = SREF2[n], len(SREF2[n])
+        for split in ("val", "test"):
+            evs = []
+            for k in (0, 1):
+                s = _families(n, split, k)[FAM[n]]
+                cnt = m - np.searchsorted(r, s, side="left")
+                add = 0.0 if (split == "val" and k == 1) else 1.0
+                p = (add + cnt) / (m + 1.0)
+                hi = cnt == 0
+                if hi.any():
+                    p[hi] = np.exp(-(s[hi] - r[-1]) / SB[n]) / (m + 1.0)
+                evs.append(-np.log(p))
+            SEV[(n, split)] = tuple(evs)
+
+    def wnrm(ws):
+        s = sum(w for w in ws if w > 0)
+        return [w / s if w > 0 else 0.0 for w in ws]
+
     def scaled(n, split, use_T):
         Pv, I = raw[(n, split)]
         if not use_T or temps[n] == 1:
@@ -310,6 +389,19 @@ def main():
             variants.append({"rule": rule, "temp": False, "w": list(w), "wname": wname,
                              "val": quick_score(correct, Tp.max(1), Ti.max(1))})
 
+    # A2: gcfisher + auxiliary scalar evidence (whole-vector veto)
+    for alpha in (0.15, 0.3, 0.6, 1.0):
+        for wname, w in p_wlist:
+            wn = wnrm(list(w))
+            Tp, Ti = combine_cmat("cfisher", list(w), "val")
+            aux_p = sum(u * SEV[(n, "val")][0] for n, u in zip(names, wn) if u > 0)
+            aux_i = sum(u * SEV[(n, "val")][1] for n, u in zip(names, wn) if u > 0)
+            variants.append({"rule": "gcfisher_a", "temp": False, "alpha": alpha,
+                             "w": list(w), "wname": wname,
+                             "val": quick_score(correct_cache[wname],
+                                                Tp.max(1) + alpha * aux_p,
+                                                Ti.max(1) + alpha * aux_i)})
+
     variants.sort(key=lambda v: (-v["val"][0.005], -v["val"][0.01], -v["val"]["top1"]))
     print(f"\n{'rule':10s} {'T':5s} {'weights':30s} | val @.5%  @1%   @5%   top1")
     for v in variants[:12]:
@@ -335,13 +427,25 @@ def main():
         if v["rule"][0] == "c":
             extra.append(v)
             break
+    for v in variants:
+        if v["rule"] == "gcfisher_a":
+            extra.append(v)
+            break
     ordered = variants[:3] + baselines + extra
     for v in ordered:
-        key = (v["rule"], v["temp"], v["wname"])
+        key = (v["rule"], v["temp"], v["wname"], v.get("alpha"))
         if key in keys:
             continue
         keys.append(key)
-        if v["rule"] == "gcfisher":
+        if v["rule"] == "gcfisher_a":
+            wn = wnrm(v["w"])
+            Tp, Ti = combine_cmat("cfisher", v["w"], "test")
+            aux_p = sum(u * SEV[(n, "test")][0] for n, u in zip(names, wn) if u > 0)
+            aux_i = sum(u * SEV[(n, "test")][1] for n, u in zip(names, wn) if u > 0)
+            Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
+            m = score_metrics(Pv, y["test"], Tp.max(1) + v["alpha"] * aux_p,
+                              Ti.max(1) + v["alpha"] * aux_i, n_boot=1000)
+        elif v["rule"] == "gcfisher":
             Tp, Ti = combine_cmat("cfisher", v["w"], "test")
             Pv = combine("geo", v["w"], [raw[(n, "test")][0] for n in names])
             m = score_metrics(Pv, y["test"], Tp.max(1), Ti.max(1), n_boot=1000)
@@ -357,17 +461,19 @@ def main():
             Iv = combine(v["rule"], v["w"], [scaled(n, "test", v["temp"])[1] for n in names])
             m = open_set_metrics(Pv, y["test"], Iv.max(1), n_boot=1000)
         m["fpr"] = {str(k): v for k, v in m["fpr"].items()}
-        tag = f"{v['rule']}|T={v['temp']}|{v['wname']}"
+        tag = f"{v['rule']}|T={v['temp']}|{v['wname']}" + \
+              (f"|a={v['alpha']}" if "alpha" in v else "")
         print(f"{tag:40s} top1={m['closed']['top1']:.3f} "
               f"@.5%={m['fpr']['0.005']['tpr']:.3f} "
               f"@1%={m['fpr']['0.01']['tpr']:.3f} @5%={m['fpr']['0.05']['tpr']:.3f} "
               f"AUROC={m['auroc_detection']:.3f}")
         finals.append({"config": tag, "val": v["val"], "test": m})
 
-    out = PROJECT_ROOT / "runs" / f"combo_{args.dataset}"
+    out = PROJECT_ROOT / "runs" / (args.out or f"combo_{args.dataset}")
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(
-        json.dumps({"members": names, "temps": temps, "pval_ref": {n: len(REF[n]) for n in names},
+        json.dumps({"members": names, "temps": temps,
+                    "families": FAM, "pval_ref": {n: len(REF[n]) for n in names},
                     "top_variants": variants[:12], "finals": finals},
                    indent=1, default=str), encoding="utf-8")
     print(f"[wrote] {out / 'report.json'}")
