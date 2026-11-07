@@ -25,3 +25,5 @@ runs/df_arc*.log
 runs/dfs4*_branch_*/model.pt
 runs/ms*.log
 runs/ng_logs/
+# 4096 旧线 DF 权重（被 L8k 取代，无复用价值；报告保留）
+runs/ng_dfs_branch_*/model.pt
