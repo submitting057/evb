@@ -30,10 +30,81 @@ DF+dt 三路），纯后处理组合器：
 5s 版（LGBM + DF 两路，gcfisher .25/.75；A2 附加证据无增益）：top1 .920 /
 @0.5% .580 / @1% .650 / @5% .786（几何平均基线 .497/.587/.732）。
 
-## 严格协议（视频不交叠开集，`splits_10s_strict_s42.json`）推荐配置
+## 严格协议推荐配置（当前主线 = 10s_nogro 数据线 + 通道拆分成员）
+
+### 数据线迁移（2026-11-05）：10s_nogro（GRO 关闭重提取）
+
+数据重提取为 packet 级事件（max size 1250=MTU，~3.5× 事件数，video_cdn>4096
+的会话 0.81%→16.6%），同 644 视频、strict s42 视频级划分不变（386 known /
+129 val 冒充 / 129 test 冒充），`splits/splits_10s_nogro_strict_s42.json`。
+全通道成员线（lgbm v2 + e100/dt 全5通道 video:8192/api:768 + aux4）的
+LOVO 最优 geo **.15/.55/0/.30**：test top1 .944 / @0.5% .797 / @1% .836 /
+@5% .893（`runs/combo_10s_nogro_L8k_strict/`）——比旧 GRO 线 geo4（.654）
+高 +14pp，是本推荐配置的对照基线。
+
+### 推荐系统：通道拆分 geo4（2026-11-07）
+
+**成员按通道完全拆分**（通道轴去同质化，T2-A2 损失头负结果的后续方向）：
+**LGBM + DF vid（纯 video_cdn,8192）+ DF vid_dt（纯视频+dt）+ DF aux3
+（api+thumbnail+channel_info，去掉 other）**，geo 权重 **.15/.15/.30/.40**
+（池化 LOVO 选出），`runs/combo_10s_nogro_L8k_chsplit4/`：
+
+| 严格协议 test（10s_nogro） | top1 | @0.5% | @1% | @5% | AUROC |
+|---|---|---|---|---|---|
+| **通道拆分 geo4（推荐）** | .943 | **.823** | .850 | .900 | .947 |
+| 全通道基线 geo（.15/.55/0/.30） | .944 | .797 | .836 | .893 | .947 |
+| 拆分3成员（无dt，.20/.40/.40） | .939 | .801 | .837 | .893 | .943 |
+| （旧 10s GRO 线）geo4 T2-A1 | .975 | .654 | .729 | .880 | .964 |
+
+单模型（test）：vid .881/.446@0.5%、vid_dt .893/.340、aux3 .639/.094
+（辅助通道对 DF 单模型贡献 @0.5% ~30pp——拆分是拿单模型强度换成员独立性）。
+
+**确认口径（如实记录，2026-11-07）**：三档 oracle 点估计全面更优
+（+2.6/+1.4/+0.7pp）但配对视频簇 bootstrap CI 含 0（@0.5%
+[−.020,+.099]）；10000 次自助 **P(dTPR>0) = .84/.79/.79**。经所有者裁决
+确认提升并采纳为推荐系统——该裁决**推翻了"CI 排 0 才可确认"的既有门**
+（findings §3.6c 留档）；一致性提醒：同量级的 L8k(8192) vs 4096（+2.3pp、
+CI 含 0）按同一裁决标准亦应记为提升。部署口径：@0.5% realized FPR 0.53%、
+TPR .823（对照基线 0.41%/.766；realized FPR 略松）。
+
+**机制**：aux3 与两个 DF 的 val 冒充者 argmax 一致率 **0.3–0.4%**（旧 aux4
+7.4–7.6%，随机 0.26%）——通道拆分把成员去同质化做到随机水平；正确 probe 上
+aux3-vs-vid 仍 71% 同票（真身份不伤投票）。**dt 门通过**：dt(纯视频) 在
+LOVO top-15 全部配置权重 ≥0.1，对 3 成员系统的边际 @1% CI **[+.002,+.027]
+排 0**。vid 与 vid_dt 互相仍 64.6% 一致（同通道必然），但乘积门仍吃到 dt 的
+@1% 增量。叠加方向（6 成员两段式 0.25→0.05 初筛/精筛，规则见
+`runs/combo_10s_nogro_L8k_chadd6/SCREEN_RULE.md`）判负关闭：初筛自动把旧
+dt/aux4/vid 压零收敛到 [lgbm,e100,aux3]，精筛 @0.5% .772 < 基线。
+
+### 通道拆分复现命令
+
+```bash
+# 三个专家（预算与全通道线一致：100ep/min15/pat12/batch64/seed42）
+python scripts/run_df.py --dataset 10s_nogro --protocol strict --fusion branch \
+    --channels video_cdn --chan-len video_cdn:8192 --epochs 100 \
+    --tag ngL_dfs_branch_vid
+python scripts/run_df.py --dataset 10s_nogro --protocol strict --fusion branch \
+    --channels video_cdn --chan-len video_cdn:8192 --epochs 100 --dt \
+    --tag ngL_dfs_branch_vid_dt
+python scripts/run_df.py --dataset 10s_nogro --protocol strict --fusion branch \
+    --channels api,channel_info,thumbnail \
+    --chan-len api:768,thumbnail:384,channel_info:192 --epochs 100 \
+    --tag ngL_dfs_branch_aux3
+python scripts/run_combiner.py --dataset 10s_nogro --protocol strict \
+    --df-tags ngL_dfs_branch_vid,ngL_dfs_branch_vid_dt,ngL_dfs_branch_aux3 \
+    --lovo --families plain --out combo_10s_nogro_L8k_chsplit4
+# 验收：配对簇 bootstrap vs 全通道基线 + 单侧概率
+python scripts/run_paired_boot.py --dataset 10s_nogro \
+    --a-tags ngL_dfs_branch_vid,ngL_dfs_branch_vid_dt,ngL_dfs_branch_aux3 \
+    --a-w 0.15,0.15,0.3,0.4 --b-tags ngL_dfs_branch_all_e100,ngL_dfs_branch_all_dt,ngL_dfs_branch_aux \
+    --b-w 0.15,0.55,0.0,0.3 --out ng_boot_chsplit4_vs_base
+python scripts/run_osided_boot.py
+```
+
+## 旧 10s（GRO）严格线（存档，2026-11-01）
 
 部署假设"未知视频完全未见过"（644 → 386 known / 129 val 冒充 / 129 test 冒充，
-视频级 6:2:2）下的推荐系统 = **geo 几何平均 4 成员**（LGBM + DF branch e100 +
+视频级 6:2:2）下的当时推荐 = **geo 几何平均 4 成员**（LGBM + DF branch e100 +
 DF branch dt + **DF branch aux**——aux 只看辅助通道，是针对 video_cdn 共线
 磁铁的独立反对票），权重 **.35/.10/.20/.35**（池化 LOVO 选出，aux 与 lgbm
 并列最大），`runs/combo_10s_strict_t2a1/` + `runs/t2_aux_eval/`：
@@ -73,7 +144,10 @@ ArcFace 头成员被独立门击杀（与 softmax DF 错误一致率 51.9%≈DF 
 （LOVO .656 < geo3 .696），负结果关闭——实验链见 findings.md §3.5 第六/七轮。
 **此后开集配置选择一律用池化 LOVO**（留未知视频 5 折，其排名与 test 同向）。
 
-## 单模型最优配置（DF branch）
+## 单模型最优配置（DF branch；旧 10s GRO 线参数）
+
+（nogro 主线的差异：video_cdn 长度 8192、api 768、aux3 thumbnail 384 /
+channel_info 192；见上文通道拆分小节。）
 
 - **输入**：每语义通道一条 packet-index 序列（通道内包序号），左对齐右侧补零；
   值 = `sign(size)·log1p(|size|)/log(65536)`（带符号大小，GRO 合并原始值）；
@@ -99,7 +173,7 @@ ArcFace 头成员被独立门击杀（与 softmax DF 错误一致率 51.9%≈DF 
 - **推理/打分**：softmax 概率向量；闭集 argmax；开集得分 = max prob，
   θ 由 unknown impostor 池分位数标定（`src/evaluate.py`）。
 
-## 复现命令
+## 复现命令（旧 10s GRO 线全流程；nogro 主线见上文通道拆分命令）
 
 ```bash
 # 0) 数据在 E:\evb\datasets（项目外），首次运行自动建 runs/cache/df_series_*.npz
@@ -148,10 +222,16 @@ python scripts/run_t2_aux_eval.py --w4 0.35,0.10,0.20,0.35
 
 ## 权重与报告索引
 
+- **当前推荐（通道拆分）**：`runs/ngL_dfs_branch_{vid,vid_dt,aux3}/model.pt`
+  + `runs/combo_10s_nogro_L8k_chsplit4/report.json`；对照全通道线
+  `runs/ngL_dfs_branch_{all_e100,all_dt,aux}/model.pt` +
+  `runs/combo_10s_nogro_L8k_strict/report.json`；验收
+  `runs/ng_boot_{chsplit4_vs_base,chsplit3_vs_base,chsplit4_vs_3,chadd6_vs_base}/`、
+  `runs/t2_chsplit_eval/`、两段式规则 `runs/combo_10s_nogro_L8k_chadd6/SCREEN_RULE.md`
 - `runs/df_branch_all_e100/model.pt`、`runs/df_branch_all_dt/model.pt`、
-  `runs/df5_branch_all_e100/model.pt`：最优权重（含 args/hist 元数据）
+  `runs/df5_branch_all_e100/model.pt`：旧 GRO 线最优权重（含 args/hist 元数据）
 - `runs/{df_*,ens_*}/report.json`：全部配置的完整指标；
-  `runs/combo_{10s,5s}/report.json`：组合器全网格结果（当前最优 gcfisher_a）
+  `runs/combo_{10s,5s}/report.json`：组合器全网格结果（旧协议最优 gcfisher_a）
 - `runs/{tag}/probs_{val,test}.npz`：概率矩阵；`runs/{tag}/logits_*.npz`：logits
   （A2 打分族用）；`runs/{tag}_tta/`：TTA 概率（已证伪，留作对照）——
   均为可重建产物，不入库
