@@ -27,3 +27,11 @@ runs/ms*.log
 runs/ng_logs/
 # 4096 旧线 DF 权重（被 L8k 取代，无复用价值；报告保留）
 runs/ng_dfs_branch_*/model.pt
+# §3.6d 四轴判负线权重（负结果关闭，无复用价值；报告保留）
+runs/ngL_resnet_vid/model.pt
+runs/ngL_tcn_vid/model.pt
+runs/ngL_vit_vid/model.pt
+runs/ngL_tb_vid/model.pt
+runs/ngL_dfs_branch_vid_e200/model.pt
+runs/ngL_dfs_branch_vid_dt_e200/model.pt
+runs/ng_*.log
