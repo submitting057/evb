@@ -35,3 +35,6 @@ runs/ngL_tb_vid/model.pt
 runs/ngL_dfs_branch_vid_e200/model.pt
 runs/ngL_dfs_branch_vid_dt_e200/model.pt
 runs/ng_*.log
+# §3.6e 主动反相关判负线权重与训练日志（负结果关闭；report.json/probs 可由脚本重建）
+runs/ngL_ac_*/model.pt
+runs/ngL_ac_*.log
