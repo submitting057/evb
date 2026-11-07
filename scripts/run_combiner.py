@@ -159,6 +159,9 @@ def main():
     ap.add_argument("--lovo", action="store_true",
                     help="P1: leave-unknown-video-out selection + per-class "
                          "pricing shrinkage (strict protocol)")
+    ap.add_argument("--lgbm-suffix", default="",
+                    help="load lgbm_probs_{dataset}_strict{suffix}.npz instead "
+                         "of the default cache (e.g. _v3 for packet-aware v3)")
     ap.add_argument("--families", default="all", choices=["all", "plain"],
                     help="'plain': only arith/geo/min (memory-safe for many "
                          "members -- the cfisher/A2 weight-grid cache grows "
@@ -169,9 +172,9 @@ def main():
     cos_tags = [t for t in args.cos_tags.split(",") if t]
 
     if args.protocol == "strict":
-        lgbm_cache = PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}_strict.npz"
+        lgbm_cache = PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}_strict{args.lgbm_suffix}.npz"
     else:
-        lgbm_cache = PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}.npz"
+        lgbm_cache = PROJECT_ROOT / "runs" / "cache" / f"lgbm_probs_{args.dataset}{args.lgbm_suffix}.npz"
     z = np.load(lgbm_cache)
     names = ["lgbm"] + tags
     y = {}

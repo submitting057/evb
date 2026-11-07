@@ -1,0 +1,20 @@
+{
+ "teacher_trees": 579000,
+ "b1_gpu_ms": 0.23111200003768317,
+ "b1_cpu_ms": 0.26919900003122166,
+ "top1_val": 0.1456176673567978,
+ "tpr05_val": 0.011042097998619738,
+ "top1_test": 0.12101390024529844,
+ "tpr05_test": 0.005723630417007359,
+ "agree_e100_valimp": 0.028263473053892214,
+ "teacher_agree_e100_valimp": 0.10994011976047904,
+ "agree_teacher_valimp": 0.08407185628742515,
+ "config": {
+  "dataset": "10s_nogro",
+  "epochs": 200,
+  "T": 2.0,
+  "hard_w": 0.3,
+  "seed": 42,
+  "out_suffix": "mlp"
+ }
+}

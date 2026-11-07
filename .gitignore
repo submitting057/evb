@@ -24,3 +24,4 @@ runs/df_aux_train.log
 runs/df_arc*.log
 runs/dfs4*_branch_*/model.pt
 runs/ms*.log
+runs/ng_logs/

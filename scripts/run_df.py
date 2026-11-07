@@ -66,6 +66,10 @@ def main():
     ap.add_argument("--value", default="logsize", choices=["logsize", "dir"])
     ap.add_argument("--dt", action="store_true")
     ap.add_argument("--chan-emb", action="store_true")
+    ap.add_argument("--chan-len", default="",
+                    help="per-channel length overrides, e.g. "
+                         "'video_cdn:8192,api:768' (default = CHANNEL_LEN; "
+                         "pass the same value again on --load)")
     ap.add_argument("--side", default="none", choices=["none", "seg"])
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--min-epochs", type=int, default=15)
@@ -108,13 +112,17 @@ def main():
     all_sids = sorted(set().union(*pools.values()))
     cache = load_series_cache(index, args.dataset)
     channels = [c for c in args.channels.split(",") if c]
+    chan_len = {}
+    for part in filter(None, args.chan_len.split(",")):
+        name, _, val = part.partition(":")
+        chan_len[name.strip()] = int(val)
     segX = get_seg_feats(index, all_sids, args.dataset)
     seg_pos = {s: i for i, s in enumerate(all_sids)}
 
     def mk(pool, augment):
         return DFData(cache, pool, labels, channels, args.fusion, args.value,
                       args.dt, chan_emb=args.chan_emb, augment=augment,
-                      seed=mseed)
+                      seed=mseed, lens=chan_len)
 
     ds = {name: mk(pool, name == "train") for name, pool in pools.items()}
     ld = {name: DataLoader(d, batch_size=args.batch if name == "train" else 256,
@@ -131,10 +139,11 @@ def main():
 
     model = DFNet(channels, args.fusion, n_class=len(known),
                   F=2 if args.dt else 1, side_dim=120 if use_side else 0,
-                  chan_emb=args.chan_emb).to(device)
+                  chan_emb=args.chan_emb, lens=chan_len).to(device)
     n_par = sum(p.numel() for p in model.parameters())
     print(f"[model] fusion={args.fusion} channels={channels} value={args.value} "
           f"dt={args.dt} side={args.side} chan_emb={args.chan_emb} "
+          f"chan_len={chan_len or 'default'} "
           f"params={n_par / 1e6:.2f}M flat={model._flat}")
 
     out_dir = PROJECT_ROOT / "runs" / args.tag
@@ -189,7 +198,7 @@ def main():
         torch.save({"state": best["state"], "args": vars(args),
                     "best_epoch": best["epoch"], "hist": hist,
                     "flat": model._flat, "channels": channels,
-                    "fusion": args.fusion}, ckpt)
+                    "chan_len": chan_len, "fusion": args.fusion}, ckpt)
         print(f"[saved] {ckpt}")
 
     report = {"args": vars(args), "best_epoch": best["epoch"], "hist": hist,

@@ -9,6 +9,11 @@ DATASETS_ROOT = Path(r"E:\evb\datasets")
 DATASET_DIRS = {
     "10s": DATASETS_ROOT / "600vids_30samples_10s",
     "5s": DATASETS_ROOT / "600vids_30samples_5s",
+    # 2026-11-05: GRO re-split re-extraction (packet-level events, max size
+    # 1250 = MTU; ~3.5x more events per session, video_cdn>4096 in 16.6% of
+    # sessions vs 0.81% before).  Same 644 videos -> strict s42 video-level
+    # assignment identical to "10s".
+    "10s_nogro": DATASETS_ROOT / "600classes_30samples_10s_no_gro" / "dataset",
 }
 
 # bins arrays on disk are (5, T, 4) with axis-0 channel order:
@@ -18,7 +23,7 @@ SEMANTIC_CHANNELS = ["video_cdn", "api", "channel_info", "thumbnail", "other"]
 # map disk channel -> canonical order index used everywhere in this project
 BIN_CHANNEL_PERM = [DISK_BIN_CHANNELS.index(c) for c in SEMANTIC_CHANNELS]
 
-MAX_BINS = {"10s": 1500, "5s": 500}   # 10ms bins, duration cap 15s / 5s
+MAX_BINS = {"10s": 1500, "5s": 500, "10s_nogro": 1500}   # 10ms bins, duration cap 15s / 5s
 MAX_EVENTS = 4096
 
 

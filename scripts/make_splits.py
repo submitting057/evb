@@ -21,8 +21,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--protocol", default="legacy", choices=["legacy", "strict"])
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--dataset", default=None,
+                    help="restrict to one dataset key (e.g. 10s_nogro); "
+                         "default keeps the historical per-protocol list")
     args = ap.parse_args()
-    datasets = ["10s", "5s"] if args.protocol == "legacy" else ["10s"]
+    if args.dataset:
+        datasets = [args.dataset]
+    else:
+        datasets = ["10s", "5s"] if args.protocol == "legacy" else ["10s"]
     for dataset in datasets:
         cfg = RunConfig(dataset=dataset, protocol=args.protocol)
         cfg.split.seed = args.seed

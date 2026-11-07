@@ -1,0 +1,54 @@
+{
+ "config": {
+  "dataset": "10s_nogro",
+  "out": "infer_bench"
+ },
+ "features": {
+  "load_events_ms": 7.090314000088256,
+  "segment_features_v2_ms": 1.2603360001230612,
+  "df_encode_ms": 0.15945937502692686
+ },
+ "df": {
+  "ngL_dfs_branch_all_e100": {
+   "batch1_ms": 12.271043437476692,
+   "batch64_per_sample_ms": 0.1794982031242398,
+   "getitem_pad_ms": 0.04754218753078021,
+   "cpu_batch1_ms": 62.75165416627715
+  },
+  "ngL_dfs_branch_all_dt": {
+   "batch1_ms": 11.706550000008065,
+   "batch64_per_sample_ms": 0.2696786718729527,
+   "getitem_pad_ms": 0.044512500153359724
+  },
+  "ngL_dfs_branch_aux": {
+   "batch1_ms": 13.290021562488619,
+   "batch64_per_sample_ms": 0.2761978125022324,
+   "getitem_pad_ms": 0.02009062495744729
+  }
+ },
+ "lgbm": {
+  "n_trees": 579000,
+  "best_iteration": 1500,
+  "replica_dprob": 0.0,
+  "single_row_ms": 51.01883600000292,
+  "iter_scaling": {
+   "25": 0.49523200024850667,
+   "50": 1.4727019998827018,
+   "100": 3.138219999964349,
+   "200": 6.373871999967378,
+   "400": 14.594035999907646,
+   "800": 26.684774000023026
+  },
+  "batch256_per_sample_ms": 10.720561093751257
+ },
+ "budget_per_sample_ms": {
+  "features": 7.249773375115183,
+  "load_events": 7.090314000088256,
+  "df_encode": 0.15945937502692686,
+  "segv2_extra": -5.829977999965195,
+  "df_forward_e100_aux": 25.56106499996531,
+  "lgbm": 51.01883600000292,
+  "total": 83.82967437508341,
+  "lgbm_share": 0.6086011472706756
+ }
+}

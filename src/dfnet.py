@@ -96,7 +96,8 @@ class DFData(Dataset):
     def __init__(self, cache: dict, session_ids: list[str], labels: dict,
                  channels: list[str], fusion: str, value: str = "logsize",
                  dt_feat: bool = False, chan_emb: bool = False,
-                 augment: bool = False, seed: int = 0):
+                 augment: bool = False, seed: int = 0,
+                 lens: dict | None = None):
         self.channels = [c for c in SEMANTIC_CHANNELS if c in channels]
         self.fusion, self.value, self.dt_feat = fusion, value, dt_feat
         self.chan_emb = chan_emb and fusion == "merge"
@@ -131,11 +132,13 @@ class DFData(Dataset):
                     per.append((_encode(vch, self.value), None,
                                 _dts(tch) if dt_feat else None, tch))
                 self.data.append(per)
+        clen = dict(CHANNEL_LEN)
+        clen.update(lens or {})
         if fusion == "branch":
-            self.lens = [CHANNEL_LEN[ch] for ch in self.channels]
+            self.lens = [clen[ch] for ch in self.channels]
         else:
             self.lens = [MERGE_LEN if fusion == "merge"
-                         else max(CHANNEL_LEN[ch] for ch in self.channels)]
+                         else max(clen[ch] for ch in self.channels)]
         self.n_series = 1 if fusion == "merge" else len(self.channels)
 
     def __len__(self):
@@ -281,18 +284,20 @@ class DFNet(nn.Module):
 
     def __init__(self, channels: list[str], fusion: str, n_class: int,
                  F: int = 1, side_dim: int = 0, chan_emb: bool = False,
-                 widths=(32, 64, 128, 256)):
+                 widths=(32, 64, 128, 256), lens: dict | None = None):
         super().__init__()
         self.fusion = fusion
+        clen = dict(CHANNEL_LEN)
+        clen.update(lens or {})
         if fusion in ("merge", "stack"):
             cin = (F + (len(SEMANTIC_CHANNELS) if chan_emb else 0)) \
                 if fusion == "merge" else len(channels) * F
-            lin = MERGE_LEN if fusion == "merge" else max(CHANNEL_LEN[c] for c in channels)
+            lin = MERGE_LEN if fusion == "merge" else max(clen[c] for c in channels)
             self.trunk = DFTrunk(cin, widths)
             self._flat = 256 * self.trunk.out_len(lin)
         else:                                    # branch
             self.trunk = None
-            self.trunk_lens = [CHANNEL_LEN[c] for c in channels]
+            self.trunk_lens = [clen[c] for c in channels]
             flat = 0
             for l in self.trunk_lens:
                 t = DFTrunk(F, widths)

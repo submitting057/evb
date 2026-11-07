@@ -57,6 +57,83 @@ def segment_features_v2(index: SessionIndex, session_id: str) -> np.ndarray:
     return feats
 
 
+def segment_features_v3(index: SessionIndex, session_id: str) -> np.ndarray:
+    """Packet-aware segment fingerprint (GRO re-split data only).
+
+    The GRO re-split restores per-packet structure inside each DASH segment:
+    packet counts, size dispersion (MTU plateau + remainder) and inter-packet
+    timing.  v2 keeps only segment masses/durations, which are byte-conserved
+    under re-splitting -- v3 adds the packet-level evidence v2 cannot see.
+
+    Layout (MAX_SEGS_V2 * 12 + 12):
+      per segment: v2's 7 (log mass, log share, mass/first, log onset,
+                   log idle-before, log dur, log rate)
+                   + log n_pkts, log mean pkt, log std pkt,
+                     log median dt, log max gap
+      global: v2's 8 + log total pkts, log mean pkt size, frac MTU-full,
+              median inter-pkt dt
+    """
+    ev, chan, _ = load_events(index, session_id)
+    m = (chan == CDN) & (ev[:, 0] > 0)
+    feats = np.zeros(MAX_SEGS_V2 * 12 + 12, dtype=np.float32)
+    if not m.any():
+        return feats
+    d = ev[m]
+    t, sz = d[:, 3] / 1000.0, d[:, 0]
+    gaps = np.diff(t, prepend=t[0])
+    cuts = np.where(gaps > SEG_GAP_S)[0]
+    starts = np.concatenate([[0], cuts])
+    ends = np.concatenate([cuts, [len(t)]])
+    segs = []
+    for s, e in zip(starts, ends):
+        mass = float(sz[s:e].sum())
+        if mass >= MIN_SEG_BYTES:
+            segs.append((s, e))
+    if not segs:
+        return feats
+    total = sum(float(sz[s:e].sum()) for s, e in segs)
+    first = float(sz[segs[0][0]:segs[0][1]].sum())
+    n = min(len(segs), MAX_SEGS_V2)
+    all_dt = []
+    for i, (s, e) in enumerate(segs[:n]):
+        b = i * 12
+        p = sz[s:e]
+        dt = np.diff(t[s:e])
+        mass = float(p.sum())
+        dur = max(1e-3, float(t[e - 1] - t[s]))
+        feats[b] = np.log(mass)
+        feats[b + 1] = np.log(mass / total)
+        feats[b + 2] = mass / first
+        feats[b + 3] = np.log(t[s] + 1e-3)
+        feats[b + 4] = np.log(float(gaps[s]) + 1e-3) if s else 0.0
+        feats[b + 5] = np.log(dur)
+        feats[b + 6] = np.log(mass / dur)
+        feats[b + 7] = np.log(len(p))
+        feats[b + 8] = np.log(p.mean())
+        feats[b + 9] = np.log(p.std() + 1.0)
+        feats[b + 10] = np.log(np.median(dt) + 1e-4) if len(dt) else 0.0
+        feats[b + 11] = np.log(dt.max() + 1e-4) if len(dt) else 0.0
+        if len(dt):
+            all_dt.append(float(np.median(dt)))
+    onsets = [t[s] for s, _ in segs[:n]]
+    masses = np.array([float(sz[s:e].sum()) for s, e in segs[:n]])
+    g = MAX_SEGS_V2 * 12
+    feats[g] = n
+    feats[g + 1] = np.log(total)
+    feats[g + 2] = np.log(masses[1] / first) if n > 1 else 0.0
+    feats[g + 3] = np.log(np.median(masses) / first)
+    feats[g + 4] = onsets[-1]
+    feats[g + 5] = np.log(max(1e-3, float(gaps[segs[:n][0][0]:].max()) if n else 1e-3))
+    feats[g + 6] = np.log(total / max(1e-3, onsets[-1]))
+    feats[g + 7] = np.log(max(1e-3, float(max(
+        t[e - 1] - t[s] for s, e in segs[:n]))))
+    feats[g + 8] = np.log(len(sz))
+    feats[g + 9] = np.log(sz.mean())
+    feats[g + 10] = float(np.mean(sz >= 1200))
+    feats[g + 11] = np.log(np.median(all_dt) + 1e-4) if all_dt else 0.0
+    return feats
+
+
 def segment_tokens(index: SessionIndex, session_id: str):
     """(n, 5) float32 tokens for the segs representation:
     [log mass, log(mass/total), log onset, log idle-before, log duration]."""

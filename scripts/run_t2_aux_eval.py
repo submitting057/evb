@@ -33,9 +33,7 @@ from src.data import load_splits, session_pool
 from src.evaluate import _threshold_for_fpr
 
 GRID = (0.005, 0.01, 0.05)
-MEMBERS = ["lgbm", "dfs_branch_all_e100", "dfs_branch_all_dt", "dfs_branch_aux"]
-SHORT = {"lgbm": "lgbm", "dfs_branch_all_e100": "e100",
-         "dfs_branch_all_dt": "dt", "dfs_branch_aux": "aux"}
+DEFAULT_TAGS = "dfs_branch_all_e100,dfs_branch_all_dt,dfs_branch_aux"
 
 
 def norm(P):
@@ -60,10 +58,16 @@ def main():
                     help="baseline 3-member weights (aux weight 0)")
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--out", default="t2_aux_eval")
+    ap.add_argument("--tags", default=DEFAULT_TAGS,
+                    help="comma list of the 3 DF run tags in order e100,dt,aux")
     args = ap.parse_args()
     w4 = [float(x) for x in args.w4.split(",")]
     w3 = [float(x) for x in args.w3.split(",")]
     assert len(w4) == 4 and len(w3) == 4
+    members = ["lgbm"] + [t for t in args.tags.split(",") if t]
+    assert len(members) == 4, "--tags must name exactly 3 DF runs"
+    short = {"lgbm": "lgbm", members[1]: "e100", members[2]: "dt",
+             members[3]: "aux"}
 
     rcfg = RunConfig(dataset=args.dataset, protocol="strict")
     splits = load_splits(rcfg.splits_path)
@@ -81,14 +85,14 @@ def main():
                 / f"lgbm_probs_{args.dataset}_strict.npz")
     mem["lgbm"] = {s: (norm(z[f"{s}_probe"]), norm(z[f"{s}_imp"]))
                    for s in ("val", "test")}
-    for t in MEMBERS[1:]:
+    for t in members[1:]:
         mem[t] = {}
         for s in ("val", "test"):
             d = np.load(PROJECT_ROOT / "runs" / t / f"probs_{s}.npz")
             mem[t][s] = (norm(d["probe"]), norm(d["imp"]))
-    y = {"val": np.load(PROJECT_ROOT / "runs" / MEMBERS[1]
+    y = {"val": np.load(PROJECT_ROOT / "runs" / members[1]
                         / "probs_val.npz")["probe_y"],
-         "test": np.load(PROJECT_ROOT / "runs" / MEMBERS[1]
+         "test": np.load(PROJECT_ROOT / "runs" / members[1]
                          / "probs_test.npz")["probe_y"]}
 
     rep = {"config": {"dataset": args.dataset, "w4": w4, "w3": w3,
@@ -99,7 +103,7 @@ def main():
     print(f"{'member':6s} {'top1_val':>9s} {'top1_test':>9s} "
           f"{'imp_q50':>8s} {'imp_q99':>8s} {'imp_max':>8s}   (imp = val)")
     rep["members"] = {}
-    for n in MEMBERS:
+    for n in members:
         tv = float((mem[n]["val"][0].argmax(1) == y["val"]).mean())
         tt = float((mem[n]["test"][0].argmax(1) == y["test"]).mean())
         smax = mem[n]["val"][1].max(1)
@@ -107,13 +111,13 @@ def main():
                "imp_q50": float(np.quantile(smax, .5)),
                "imp_q99": float(np.quantile(smax, .99)),
                "imp_max": float(smax.max())}
-        rep["members"][SHORT[n]] = row
-        print(f"{SHORT[n]:6s} {tv:9.3f} {tt:9.3f} {row['imp_q50']:8.3f} "
+        rep["members"][short[n]] = row
+        print(f"{short[n]:6s} {tv:9.3f} {tt:9.3f} {row['imp_q50']:8.3f} "
               f"{row['imp_q99']:8.3f} {row['imp_max']:8.3f}")
 
     # ---- 2) independence gate ----------------------------------------------
     print("\n=== 2) independence gate: argmax agreement on VAL impostors ===")
-    args_ = {SHORT[n]: mem[n]["val"][1].argmax(1) for n in MEMBERS}
+    args_ = {short[n]: mem[n]["val"][1].argmax(1) for n in members}
     n_imp = len(args_["lgbm"])
     rep["agreement"] = {}
     pairs = [("e100", "dt"), ("aux", "e100"), ("aux", "dt"), ("aux", "lgbm"),
@@ -128,7 +132,7 @@ def main():
     rep["gate_independence_pass"] = bool(gate <= 0.10)
     # probe-side sanity: on correct val probes members SHOULD agree a lot
     cor = mem["lgbm"]["val"][0].argmax(1) == y["val"]
-    argp = {SHORT[n]: mem[n]["val"][0].argmax(1) for n in MEMBERS}
+    argp = {short[n]: mem[n]["val"][0].argmax(1) for n in members}
     for a, b in [("aux", "e100"), ("aux", "dt")]:
         ag = float((argp[a][cor] == argp[b][cor]).mean())
         rep["agreement"][f"{a}_vs_{b}_correct_probes"] = ag
@@ -136,8 +140,8 @@ def main():
 
     # ---- 3) veto power on val magnets --------------------------------------
     print("\n=== 3) veto power on val magnets (top-0.5% of 3-member geo) ===")
-    G3v = geo(w3, [mem[n]["val"][0] for n in MEMBERS])
-    I3v = geo(w3, [mem[n]["val"][1] for n in MEMBERS])
+    G3v = geo(w3, [mem[n]["val"][0] for n in members])
+    I3v = geo(w3, [mem[n]["val"][1] for n in members])
     si3 = I3v.max(1)
     th = _threshold_for_fpr(si3, 0.005)
     mag_rows = np.where(si3 >= th)[0]
@@ -147,15 +151,15 @@ def main():
     print(f"  val top-0.5% events: {len(mag_rows)} from "
           f"{len(set(mag_vids.tolist()))} videos")
     rep["magnets"]["member_conf"] = {}
-    for n in MEMBERS:
+    for n in members:
         smax = mem[n]["val"][1].max(1)
         row = {"mag_median": float(np.median(smax[mag_rows])),
                "mag_mean": float(smax[mag_rows].mean()),
                "probe_correct_median": float(np.median(
                    mem[n]["val"][0].max(1)[
                        mem[n]["val"][0].argmax(1) == y["val"]]))}
-        rep["magnets"]["member_conf"][SHORT[n]] = row
-        print(f"  {SHORT[n]:5s} maxprob on magnets: median "
+        rep["magnets"]["member_conf"][short[n]] = row
+        print(f"  {short[n]:5s} maxprob on magnets: median "
               f"{row['mag_median']:.3f} mean {row['mag_mean']:.3f} "
               f"(correct-probe median {row['probe_correct_median']:.3f})")
 
@@ -166,10 +170,10 @@ def main():
     rules = {"geo4": w4, "geo3": w3}
     P, SP, CO, SI = {}, {}, {}, {}
     for rn, w in rules.items():
-        P[rn] = geo(w, [mem[n]["test"][0] for n in MEMBERS])
+        P[rn] = geo(w, [mem[n]["test"][0] for n in members])
         SP[rn] = P[rn].max(1)
         CO[rn] = P[rn].argmax(1) == y["test"]
-        SI[rn] = geo(w, [mem[n]["test"][1] for n in MEMBERS]).max(1)
+        SI[rn] = geo(w, [mem[n]["test"][1] for n in members]).max(1)
 
     det = {}
     for rn in rules:
@@ -185,7 +189,7 @@ def main():
     # deployment caliber (val-side threshold), for the record
     dep = {}
     for rn, w in rules.items():
-        Iv = geo(w, [mem[n]["val"][1] for n in MEMBERS]).max(1)
+        Iv = geo(w, [mem[n]["val"][1] for n in members]).max(1)
         row = {}
         for fr in GRID:
             th = _threshold_for_fpr(Iv, fr)
