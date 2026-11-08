@@ -294,7 +294,7 @@ LOVO 压零）。**成员准入真实门槛 = 独立性 ∧ 置信方向判别�
 
 **边界**：全部结果基于单划分 seed=42（nogro 线多 seed 复验未做，旧 GRO 线
 aux 结论曾 4/4 seed 复现是间接稳健性证据）；单设备单网络环境；跨平台迁移
-理论分析见 platform_transferability.md（未入库）。
+理论分析见 platform_transferability.md。
 
 ## 五、产物索引（当前版本）
 
